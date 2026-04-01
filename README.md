@@ -106,6 +106,55 @@ Add the following to your `~/.gemini/antigravity/mcp_config.json`:
 
 Restart Antigravity, then verify with: *"List my Island Router devices"*
 
+## Configure in Cursor
+
+Add the server to your Cursor MCP settings. Open **Settings → MCP** (or edit `~/.cursor/mcp.json`) and add:
+
+```json
+{
+  "mcpServers": {
+    "island-router-mcp": {
+      "command": "node",
+      "args": ["/absolute/path/to/island-router-mcp/build/server.js"],
+      "env": {
+        "ISLAND_DEVICE_INVENTORY": "/absolute/path/to/island-router-mcp/devices.json",
+        "ROUTER_PASS": "your-router-password"
+      }
+    }
+  }
+}
+```
+
+Restart Cursor, then open the MCP tools panel to confirm the three tools appear: `island_list_devices`, `island_query`, `island_configure`.
+
+## Configure in Claude Desktop
+
+Edit your Claude Desktop config file:
+
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+Add the server entry:
+
+```json
+{
+  "mcpServers": {
+    "island-router-mcp": {
+      "command": "node",
+      "args": ["/absolute/path/to/island-router-mcp/build/server.js"],
+      "env": {
+        "ISLAND_DEVICE_INVENTORY": "/absolute/path/to/island-router-mcp/devices.json",
+        "ROUTER_PASS": "your-router-password"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Desktop. The tools will appear in the 🔨 tool menu when starting a new conversation.
+
+> **Tip:** For all clients, replace `/absolute/path/to/` with the actual path where you cloned the repo. If using SSH key auth instead of a password, you can omit the `ROUTER_PASS` env var.
+
 ## Device Inventory
 
 Create `devices.json` from the example template:
