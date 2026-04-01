@@ -47,16 +47,23 @@ A single tool for all config mutations, dispatched by `action`. Every call requi
 
 Traditional MCP servers register one tool per operation (13+ tools). Each tool's schema is serialized into every LLM request, consuming tokens even when unused. The meta-tool pattern consolidates related operations behind a single schema with an `action` discriminator — **reducing schema overhead by ~80%** while preserving full functionality.
 
-### 📖 Agent Skill (CLI Reference)
+### 📖 Agent Skills
 
-Located at `.agent/skills/island-router-cli/SKILL.md`, this is a comprehensive reference for the Island Router CLI (firmware 2.3.2). When this repo is opened as a workspace, AI assistants automatically gain context on:
+Located in `.agent/skills/`, these are AI-readable references that give assistants context when this repo is open as a workspace.
 
-- All CLI commands organized by function (interfaces, IP, DHCP, DNS, VPN, syslog, NTP, etc.)
-- CLI modes and context navigation (`Router#`, `Router(config)#`, `Router(config-if)#`)
-- Automation patterns with Python/paramiko code examples
-- Pager handling, prompt detection, and session management
-- DHCP reservation and DNS sinkhole configuration for ad blocking
-- Monitoring commands for device data usage reporting
+| Skill | Domain | What It Provides |
+|---|---|---|
+| `island-router-cli` | Networking | CLI command reference for Island Router firmware 2.3.2 — commands, modes, automation patterns, paramiko examples |
+| `skill-mcp-builder` | Development | Guide for building MCP servers — project scaffolding, tool registration (v1 + v2), Zod schemas, meta-tool patterns |
+| `skill-observability-pipeline` | DevOps | Syslog → Promtail → Loki → Grafana pipeline setup with Docker Compose configs and Raspberry Pi considerations |
+| `skill-finops-gcp` | Cloud | GCP cost analysis via BigQuery billing exports, anomaly detection, budget alerts, Cloud Run rightsizing |
+| `skill-meta-pipeline` | Meta | Orchestrates skill lifecycle: create → scan → check → install → audit → improve |
+| `skill-network-fleet` | Networking | Multi-device config drift detection, compliance audits, automated backups |
+| `skill-mcp-orchestrator` | Automation | Cross-MCP workflow recipes — Jira + Cloud Run + Confluence, incident triage, sprint planning |
+| `skill-homelab-pi` | DevOps | Raspberry Pi service management — Docker Compose, systemd hardening, SD card longevity, backups |
+| `skill-publisher` | Meta | Skill publishing pipeline — validation gates, README generation, GitHub releases, catalog updates |
+| `skill-firmware-differ` | Networking | Firmware upgrade runbooks with pre/post snapshots, compatibility analysis, rollback plans |
+| `skill-knowledge-harvester` | Meta | Extracts reusable knowledge from conversation logs into structured Knowledge Items |
 
 ---
 

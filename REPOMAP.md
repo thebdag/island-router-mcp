@@ -24,9 +24,18 @@ island-router-mcp/
 ├── build/                        # Compiled JS output (git-ignored)
 │
 ├── .agent/
-│   └── skills/
-│       └── island-router-cli/
-│           └── SKILL.md          # CLI reference skill (firmware 2.3.2)
+│   └── skills/                   # AI-readable skill references
+│       ├── island-router-cli/    # CLI reference (firmware 2.3.2)
+│       ├── skill-mcp-builder/    # MCP server development guide
+│       ├── skill-observability-pipeline/  # Syslog → Grafana pipeline
+│       ├── skill-finops-gcp/     # GCP cost analysis & automation
+│       ├── skill-meta-pipeline/  # Skill lifecycle orchestrator
+│       ├── skill-network-fleet/  # Multi-device fleet management
+│       ├── skill-mcp-orchestrator/  # Cross-MCP workflow chains
+│       ├── skill-homelab-pi/     # Raspberry Pi homelab management
+│       ├── skill-publisher/      # Skill publishing pipeline
+│       ├── skill-firmware-differ/  # Firmware upgrade planner
+│       └── skill-knowledge-harvester/  # Conversation → KI extractor
 │
 ├── package.json                  # ESM project config
 ├── tsconfig.json                 # TypeScript compiler settings
@@ -47,7 +56,22 @@ island-router-mcp/
 | `src/islandSsh.ts` | SSH session management — `openSession()`, `runCommand()`, `closeSession()` | |
 | `src/parsers/*.ts` | Transform raw CLI text into typed objects | |
 | `devices.json` | Runtime device inventory (not committed) | |
-| `.agent/skills/island-router-cli/SKILL.md` | AI-readable CLI command reference | |
+
+## Agent Skills
+
+| Skill | Domain | Purpose |
+|---|---|---|
+| `island-router-cli` | Networking | CLI command reference for Island Router firmware 2.3.2 |
+| `skill-mcp-builder` | Development | Build MCP servers (TypeScript, Zod schemas, meta-tool patterns) |
+| `skill-observability-pipeline` | DevOps | Syslog → Promtail → Loki → Grafana pipeline setup |
+| `skill-finops-gcp` | Cloud | GCP billing queries, anomaly detection, budget alerts |
+| `skill-meta-pipeline` | Meta | Orchestrate full skill lifecycle (create → publish) |
+| `skill-network-fleet` | Networking | Multi-device config drift, compliance, backups |
+| `skill-mcp-orchestrator` | Automation | Cross-MCP workflow recipes (Jira + Cloud Run + Confluence) |
+| `skill-homelab-pi` | DevOps | Docker Compose, systemd hardening, Pi maintenance |
+| `skill-publisher` | Meta | Skill validation → GitHub release → catalog update |
+| `skill-firmware-differ` | Networking | Firmware upgrade runbooks with rollback plans |
+| `skill-knowledge-harvester` | Meta | Extract conversation learnings into Knowledge Items |
 
 ## Architecture
 
