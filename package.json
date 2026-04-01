@@ -1,0 +1,24 @@
+{
+  "name": "island-mcp-server",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "island-mcp-server": "./build/server.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "start": "node build/server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.0",
+    "ssh2": "^1.15.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ssh2": "^1.15.0",
+    "typescript": "^5.6.0"
+  }
+}

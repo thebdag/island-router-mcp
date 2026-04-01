@@ -1,0 +1,10 @@
+[
+  {
+    "id": "island-edge-1",
+    "host": "192.168.2.1",
+    "port": 22,
+    "username": "admin",
+    "authMethod": "password",
+    "description": "Primary Island Router"
+  }
+]
