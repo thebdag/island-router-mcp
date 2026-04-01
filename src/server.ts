@@ -1,24 +1,11 @@
 #!/usr/bin/env node
 /**
- * server.ts — Island Router MCP Server
+ * server.ts — Island Router MCP Server (meta-tool architecture)
  *
- * Exposes Island Router CLI operations as MCP tools for use with
- * Google Antigravity and other MCP-compatible AI assistants.
- *
- * Tools:
- *   - island_list_devices        (read-only, no SSH)
- *   - island_show_status         (read-only, SSH queries)
- *   - island_show_interfaces     (read-only, parsed JSON)
- *   - island_show_neighbors      (read-only, parsed JSON)
- *   - island_show_routes         (read-only, parsed JSON)
- *   - island_show_logs           (read-only, parsed JSON)
- *   - island_show_config         (read-only, returns running-config)
- *   - island_show_vpns           (read-only, returns VPN status)
- *   - island_run_command         (read-only, allowlisted show commands)
- *   - island_ping                (read-only, ICMP from router)
- *   - island_add_dhcp_reservation  (write, guarded)
- *   - island_remove_dhcp_reservation (write, guarded)
- *   - island_configure_syslog    (write, guarded)
+ * Reduces token overhead by consolidating into 3 meta-tools:
+ *   - island_list_devices   (inventory, no SSH)
+ *   - island_query          (all read-only operations, dispatched by action)
+ *   - island_configure      (all write operations, dispatched by action, guarded)
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -46,7 +33,6 @@ let devices: DeviceConfig[];
 try {
   devices = JSON.parse(fs.readFileSync(inventoryPath, "utf8"));
 } catch {
-  // Fallback: single device from env
   devices = [
     {
       id: process.env["ISLAND_DEVICE_ID"] ?? "island-default",
@@ -58,7 +44,7 @@ try {
     },
   ];
   process.stderr.write(
-    `[island-mcp] No devices.json found at '${inventoryPath}', using env-based default device\n`,
+    `[island-mcp] No devices.json at '${inventoryPath}', using env-based default\n`,
   );
 }
 
@@ -66,62 +52,33 @@ function getDeviceOrThrow(deviceId: string): DeviceConfig {
   const dev = devices.find((d) => d.id === deviceId);
   if (!dev) {
     const available = devices.map((d) => d.id).join(", ");
-    throw new Error(
-      `Unknown device_id '${deviceId}'. Available devices: ${available}`,
-    );
+    throw new Error(`Unknown device_id '${deviceId}'. Available: ${available}`);
   }
   return dev;
 }
 
-// ─── Allowlisted commands ────────────────────────────────────────────────────
+// ─── Allowlisted show commands ───────────────────────────────────────────────
 
 const ALLOWED_SHOW_COMMANDS = [
-  "show version",
-  "show hardware",
-  "show clock",
-  "show users",
-  "show free-space",
-  "show public-key",
-  "show running-config",
-  "show startup-config",
-  "show history",
-  "show dumps",
-  "show packages",
-  "show interface",
-  "show interface summary",
-  "show interface transceivers",
-  "show ip interface",
-  "show ip routes",
-  "show ip neighbors",
-  "show ip sockets",
-  "show ip dhcp-reservations",
-  "show ip recommendations",
-  "show vpns",
-  "show ntp",
-  "show syslog",
-  "show log",
-  "show stats",
-  "show config authorized-keys",
-  "show config known-hosts",
-  "show ssh-client-keys",
+  "show version", "show hardware", "show clock", "show users",
+  "show free-space", "show public-key", "show running-config",
+  "show startup-config", "show history", "show dumps", "show packages",
+  "show interface", "show interface summary", "show interface transceivers",
+  "show ip interface", "show ip routes", "show ip neighbors",
+  "show ip sockets", "show ip dhcp-reservations", "show ip recommendations",
+  "show vpns", "show ntp", "show syslog", "show log", "show stats",
+  "show config authorized-keys", "show config known-hosts", "show ssh-client-keys",
 ];
 
 function isCommandAllowed(cmd: string): boolean {
-  const normalized = cmd.trim().toLowerCase();
-  // Allow exact matches and commands that start with an allowed prefix + space
-  // (e.g., "show stats cpu" should be allowed if "show stats" is allowed)
+  const n = cmd.trim().toLowerCase();
   return ALLOWED_SHOW_COMMANDS.some(
-    (allowed) =>
-      normalized === allowed.toLowerCase() ||
-      normalized.startsWith(allowed.toLowerCase() + " "),
+    (a) => n === a.toLowerCase() || n.startsWith(a.toLowerCase() + " "),
   );
 }
 
 // ─── Session helper ──────────────────────────────────────────────────────────
 
-/**
- * Open a session, run the callback, and always close the session.
- */
 async function withSession<T>(
   device: DeviceConfig,
   fn: (session: ShellSession) => Promise<T>,
@@ -134,569 +91,320 @@ async function withSession<T>(
   }
 }
 
-// ─── MCP Server ──────────────────────────────────────────────────────────────
+// ─── Query action handlers ──────────────────────────────────────────────────
+
+type QueryResult = { content: Array<{ type: "text"; text: string }> };
+
+async function queryStatus(dev: DeviceConfig): Promise<QueryResult> {
+  const result = await withSession(dev, async (s) => {
+    const cmds = [
+      { cmd: "show interface summary", waitMs: 2000 },
+      { cmd: "show ip interface", waitMs: 2000 },
+      { cmd: "show ip routes", waitMs: 2000 },
+      { cmd: "show ip neighbors", waitMs: 2000 },
+      { cmd: "show version", waitMs: 2000 },
+      { cmd: "show stats", waitMs: 2000 },
+      { cmd: "show clock", waitMs: 1500 },
+    ];
+    const out: Record<string, string> = {};
+    for (const { cmd, waitMs } of cmds) {
+      out[cmd] = await runCommand(s, cmd, waitMs);
+    }
+    return out;
+  });
+
+  return text({
+    device_id: dev.id, host: dev.host,
+    interfaces: result["show interface summary"],
+    ip_interfaces: result["show ip interface"],
+    routes: result["show ip routes"],
+    neighbors: result["show ip neighbors"],
+    version: result["show version"],
+    stats: result["show stats"],
+    clock: result["show clock"],
+  });
+}
+
+async function queryInterfaces(dev: DeviceConfig, detail: boolean): Promise<QueryResult> {
+  const cmd = detail ? "show interface" : "show interface summary";
+  const output = await withSession(dev, (s) => runCommand(s, cmd, 3000));
+  const parsed = detail ? parseInterfaceDetail(output) : parseInterfaceSummary(output);
+  return text({ device_id: dev.id, command: cmd, interfaces: parsed });
+}
+
+async function queryNeighbors(dev: DeviceConfig): Promise<QueryResult> {
+  const output = await withSession(dev, (s) => runCommand(s, "show ip neighbors", 2000));
+  const parsed = parseNeighbors(output);
+  return text({ device_id: dev.id, count: parsed.length, neighbors: parsed });
+}
+
+async function queryRoutes(dev: DeviceConfig): Promise<QueryResult> {
+  const output = await withSession(dev, (s) => runCommand(s, "show ip routes", 2000));
+  const parsed = parseRoutes(output);
+  return text({ device_id: dev.id, count: parsed.length, routes: parsed });
+}
+
+async function queryLogs(dev: DeviceConfig): Promise<QueryResult> {
+  const result = await withSession(dev, async (s) => ({
+    log: await runCommand(s, "show log", 3000),
+    syslog: await runCommand(s, "show syslog", 2000),
+  }));
+  const entries = parseLogEntries(result.log);
+  const syslogConfig = parseSyslogConfig(result.syslog);
+  return text({ device_id: dev.id, count: entries.length, syslog_config: syslogConfig, entries: entries.slice(-100) });
+}
+
+async function queryConfig(dev: DeviceConfig): Promise<QueryResult> {
+  const output = await withSession(dev, (s) => runCommand(s, "show running-config", 4000));
+  return { content: [{ type: "text" as const, text: output }] };
+}
+
+async function queryVpns(dev: DeviceConfig): Promise<QueryResult> {
+  const output = await withSession(dev, (s) => runCommand(s, "show vpns", 2000));
+  return { content: [{ type: "text" as const, text: output }] };
+}
+
+async function queryCommand(dev: DeviceConfig, command: string): Promise<QueryResult> {
+  if (!isCommandAllowed(command)) {
+    return {
+      content: [{
+        type: "text" as const,
+        text: JSON.stringify({
+          error: `Command not allowed: '${command}'`,
+          hint: "Only read-only 'show' commands are permitted.",
+          allowed: ALLOWED_SHOW_COMMANDS,
+        }, null, 2),
+      }],
+    };
+  }
+  const output = await withSession(dev, (s) => runCommand(s, command, 3000));
+  return text({ device_id: dev.id, command, output });
+}
+
+async function queryPing(dev: DeviceConfig, target: string): Promise<QueryResult> {
+  if (/[;&|`$(){}]/.test(target)) {
+    throw new Error("Invalid target — contains shell metacharacters");
+  }
+  const output = await withSession(dev, (s) => runCommand(s, `ping ${target}`, 10000));
+  return text({ device_id: dev.id, target, output });
+}
+
+// ─── Configure action handlers ──────────────────────────────────────────────
+
+async function configAddDhcp(
+  dev: DeviceConfig, mac: string, ip: string, hostname?: string,
+): Promise<QueryResult> {
+  if (!/^([0-9a-fA-F]{2}[:\-.]){5}[0-9a-fA-F]{2}$/.test(mac)) {
+    throw new Error(`Invalid MAC: '${mac}'`);
+  }
+  if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) {
+    throw new Error(`Invalid IP: '${ip}'`);
+  }
+
+  const result = await withSession(dev, async (s) => {
+    await runCommand(s, "configure terminal", 1500);
+    let cmd = `ip dhcp-reserve ${mac} ${ip}`;
+    if (hostname) cmd += ` ${hostname}`;
+    const configOut = await runCommand(s, cmd, 2000);
+    await runCommand(s, "end", 1000);
+    const writeOut = await runCommand(s, "write memory", 3000);
+    const verify = await runCommand(s, "show ip dhcp-reservations", 2000);
+    return { configOut, writeOut, verify };
+  });
+
+  return text({
+    applied: true, device_id: dev.id, mac, ip,
+    hostname: hostname ?? null,
+    config_output: result.configOut,
+    write_output: result.writeOut,
+    reservations: result.verify,
+  });
+}
+
+async function configRemoveDhcp(dev: DeviceConfig, mac: string): Promise<QueryResult> {
+  if (!/^([0-9a-fA-F]{2}[:\-.]){5}[0-9a-fA-F]{2}$/.test(mac)) {
+    throw new Error(`Invalid MAC: '${mac}'`);
+  }
+
+  const result = await withSession(dev, async (s) => {
+    await runCommand(s, "configure terminal", 1500);
+    const configOut = await runCommand(s, `no ip dhcp-reserve ${mac}`, 2000);
+    await runCommand(s, "end", 1000);
+    const writeOut = await runCommand(s, "write memory", 3000);
+    const verify = await runCommand(s, "show ip dhcp-reservations", 2000);
+    return { configOut, writeOut, verify };
+  });
+
+  return text({
+    removed: true, device_id: dev.id, mac,
+    config_output: result.configOut,
+    write_output: result.writeOut,
+    reservations: result.verify,
+  });
+}
+
+async function configSyslog(
+  dev: DeviceConfig, serverIp: string, port: number, level: string, protocol: string,
+): Promise<QueryResult> {
+  if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(serverIp)) {
+    throw new Error(`Invalid syslog server IP: '${serverIp}'`);
+  }
+
+  const result = await withSession(dev, async (s) => {
+    await runCommand(s, "configure terminal", 1500);
+    await runCommand(s, `syslog server ${serverIp} ${port}`, 2000);
+    await runCommand(s, `syslog level ${level}`, 1500);
+    await runCommand(s, `syslog protocol ${protocol}`, 1500);
+    await runCommand(s, "end", 1000);
+    const writeOut = await runCommand(s, "write memory", 3000);
+    const verify = await runCommand(s, "show syslog", 2000);
+    return { writeOut, verify };
+  });
+
+  return text({
+    configured: true, device_id: dev.id,
+    server_ip: serverIp, port, level, protocol,
+    write_output: result.writeOut,
+    verified_config: parseSyslogConfig(result.verify),
+  });
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function text(obj: unknown): QueryResult {
+  return { content: [{ type: "text" as const, text: JSON.stringify(obj, null, 2) }] };
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// MCP Server — 3 meta-tools
+// ═════════════════════════════════════════════════════════════════════════════
 
 const server = new McpServer({
   name: "island-router-mcp",
-  version: "0.1.0",
+  version: "0.2.0",
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tool: island_list_devices
-// ═══════════════════════════════════════════════════════════════════════════════
+// ─── Tool 1: island_list_devices ─────────────────────────────────────────────
 
 server.tool(
   "island_list_devices",
-  "List all configured Island Router devices in the inventory. Returns device IDs, hosts, and ports. No SSH connection required.",
+  "List all configured Island Router devices. No SSH needed.",
   {},
-  async () => {
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify(
-            devices.map(({ id, host, port, description }) => ({
-              id,
-              host,
-              port,
-              description: description ?? null,
-            })),
-            null,
-            2,
-          ),
-        },
-      ],
-    };
-  },
+  async () => text(
+    devices.map(({ id, host, port, description }) => ({
+      id, host, port, description: description ?? null,
+    })),
+  ),
 );
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tool: island_show_status
-// ═══════════════════════════════════════════════════════════════════════════════
+// ─── Tool 2: island_query (all read-only operations) ─────────────────────────
+
+const QueryActions = z.enum([
+  "status",        // Full overview (interfaces, routes, neighbors, version, stats, clock)
+  "interfaces",    // Parsed interface data (set detail=true for TX/RX byte counters)
+  "neighbors",     // Parsed ARP table (IP → MAC → interface → state)
+  "routes",        // Parsed routing table
+  "logs",          // Parsed log entries + syslog config
+  "config",        // Full running-config text
+  "vpns",          // VPN peer status
+  "command",       // Run an allowlisted show command (pass 'command' param)
+  "ping",          // ICMP ping from router (pass 'target' param)
+]);
 
 server.tool(
-  "island_show_status",
-  "Get a comprehensive status overview of an Island Router. Returns interface summary, IP configuration, routes, ARP neighbors, system version, and internal stats. All read-only — no configuration changes.",
+  "island_query",
+  `Read-only query against an Island Router. Actions: status (full overview), interfaces (parsed, set detail=true for byte counters), neighbors (ARP table), routes (routing table), logs (parsed entries + syslog config), config (running-config), vpns (peer status), command (any allowlisted show command — pass 'command'), ping (pass 'target').`,
   {
-    device_id: z.string().describe("ID of the Island Router device from the inventory"),
+    device_id: z.string().describe("Device ID from inventory"),
+    action: QueryActions.describe("Query action to perform"),
+    command: z.string().optional().describe("For action='command': the show command to run"),
+    target: z.string().optional().describe("For action='ping': IP or hostname to ping"),
+    detail: z.boolean().optional().default(false).describe("For action='interfaces': true for detailed TX/RX stats"),
   },
-  async ({ device_id }) => {
+  async ({ device_id, action, command, target, detail }) => {
     const dev = getDeviceOrThrow(device_id);
 
-    const result = await withSession(dev, async (session) => {
-      const commands = [
-        { cmd: "show interface summary", waitMs: 2000 },
-        { cmd: "show ip interface", waitMs: 2000 },
-        { cmd: "show ip routes", waitMs: 2000 },
-        { cmd: "show ip neighbors", waitMs: 2000 },
-        { cmd: "show version", waitMs: 2000 },
-        { cmd: "show stats", waitMs: 2000 },
-        { cmd: "show clock", waitMs: 1500 },
-      ];
-
-      const outputs: Record<string, string> = {};
-      for (const { cmd, waitMs } of commands) {
-        outputs[cmd] = await runCommand(session, cmd, waitMs);
+    switch (action) {
+      case "status":     return queryStatus(dev);
+      case "interfaces": return queryInterfaces(dev, detail);
+      case "neighbors":  return queryNeighbors(dev);
+      case "routes":     return queryRoutes(dev);
+      case "logs":       return queryLogs(dev);
+      case "config":     return queryConfig(dev);
+      case "vpns":       return queryVpns(dev);
+      case "command": {
+        if (!command) throw new Error("'command' parameter required for action='command'");
+        return queryCommand(dev, command);
       }
-      return outputs;
-    });
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify(
-            {
-              device_id,
-              host: dev.host,
-              interfaces_raw: result["show interface summary"],
-              ip_interfaces_raw: result["show ip interface"],
-              routes_raw: result["show ip routes"],
-              neighbors_raw: result["show ip neighbors"],
-              version_raw: result["show version"],
-              stats_raw: result["show stats"],
-              clock_raw: result["show clock"],
-            },
-            null,
-            2,
-          ),
-        },
-      ],
-    };
-  },
-);
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tool: island_show_interfaces
-// ═══════════════════════════════════════════════════════════════════════════════
-
-server.tool(
-  "island_show_interfaces",
-  "Get interface details from an Island Router, parsed into structured JSON. Returns interface names, statuses, TX/RX bytes, errors, MTU, MAC addresses, and more.",
-  {
-    device_id: z.string().describe("ID of the Island Router device"),
-    detail: z
-      .boolean()
-      .optional()
-      .default(false)
-      .describe("If true, return detailed per-interface stats (TX/RX bytes, errors). If false, return summary table."),
-  },
-  async ({ device_id, detail }) => {
-    const dev = getDeviceOrThrow(device_id);
-    const cmd = detail ? "show interface" : "show interface summary";
-
-    const output = await withSession(dev, (s) => runCommand(s, cmd, 3000));
-    const parsed = detail
-      ? parseInterfaceDetail(output)
-      : parseInterfaceSummary(output);
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({ device_id, command: cmd, interfaces: parsed }, null, 2),
-        },
-      ],
-    };
-  },
-);
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tool: island_show_neighbors
-// ═══════════════════════════════════════════════════════════════════════════════
-
-server.tool(
-  "island_show_neighbors",
-  "Get the ARP/neighbor table from an Island Router, parsed into structured JSON. Shows IP addresses, MAC addresses, interfaces, and connection states for all devices on the network.",
-  {
-    device_id: z.string().describe("ID of the Island Router device"),
-  },
-  async ({ device_id }) => {
-    const dev = getDeviceOrThrow(device_id);
-
-    const output = await withSession(dev, (s) => runCommand(s, "show ip neighbors", 2000));
-    const parsed = parseNeighbors(output);
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({ device_id, neighbor_count: parsed.length, neighbors: parsed }, null, 2),
-        },
-      ],
-    };
-  },
-);
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tool: island_show_routes
-// ═══════════════════════════════════════════════════════════════════════════════
-
-server.tool(
-  "island_show_routes",
-  "Get the routing table from an Island Router, parsed into structured JSON. Shows destinations, gateways, interfaces, metrics, and route types.",
-  {
-    device_id: z.string().describe("ID of the Island Router device"),
-  },
-  async ({ device_id }) => {
-    const dev = getDeviceOrThrow(device_id);
-
-    const output = await withSession(dev, (s) => runCommand(s, "show ip routes", 2000));
-    const parsed = parseRoutes(output);
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({ device_id, route_count: parsed.length, routes: parsed }, null, 2),
-        },
-      ],
-    };
-  },
-);
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tool: island_show_logs
-// ═══════════════════════════════════════════════════════════════════════════════
-
-server.tool(
-  "island_show_logs",
-  "Get recent log entries from an Island Router, parsed into structured JSON. Returns timestamps, severity levels, facilities, and messages. Also returns syslog forwarding configuration.",
-  {
-    device_id: z.string().describe("ID of the Island Router device"),
-  },
-  async ({ device_id }) => {
-    const dev = getDeviceOrThrow(device_id);
-
-    const result = await withSession(dev, async (session) => {
-      const logOutput = await runCommand(session, "show log", 3000);
-      const syslogOutput = await runCommand(session, "show syslog", 2000);
-      return { logOutput, syslogOutput };
-    });
-
-    const entries = parseLogEntries(result.logOutput);
-    const syslogConfig = parseSyslogConfig(result.syslogOutput);
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify(
-            {
-              device_id,
-              entry_count: entries.length,
-              syslog_config: syslogConfig,
-              entries: entries.slice(-100), // last 100 entries
-            },
-            null,
-            2,
-          ),
-        },
-      ],
-    };
-  },
-);
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tool: island_show_config
-// ═══════════════════════════════════════════════════════════════════════════════
-
-server.tool(
-  "island_show_config",
-  "Get the current running configuration from an Island Router. Returns the full running-config text. Read-only — no changes made.",
-  {
-    device_id: z.string().describe("ID of the Island Router device"),
-  },
-  async ({ device_id }) => {
-    const dev = getDeviceOrThrow(device_id);
-    const output = await withSession(dev, (s) => runCommand(s, "show running-config", 4000));
-
-    return {
-      content: [{ type: "text" as const, text: output }],
-    };
-  },
-);
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tool: island_show_vpns
-// ═══════════════════════════════════════════════════════════════════════════════
-
-server.tool(
-  "island_show_vpns",
-  "Get VPN status and peer list from an Island Router. Returns raw CLI output from 'show vpns'. Read-only.",
-  {
-    device_id: z.string().describe("ID of the Island Router device"),
-  },
-  async ({ device_id }) => {
-    const dev = getDeviceOrThrow(device_id);
-    const output = await withSession(dev, (s) => runCommand(s, "show vpns", 2000));
-
-    return {
-      content: [{ type: "text" as const, text: output }],
-    };
-  },
-);
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tool: island_run_command (allowlisted read-only)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-server.tool(
-  "island_run_command",
-  "Run an allowlisted read-only 'show' command on an Island Router. Only show commands are permitted (show version, show interface, show ip routes, etc.). Returns raw CLI output.",
-  {
-    device_id: z.string().describe("ID of the Island Router device"),
-    command: z.string().describe("The show command to run (e.g., 'show ip sockets', 'show stats')"),
-  },
-  async ({ device_id, command }) => {
-    if (!isCommandAllowed(command)) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              {
-                error: `Command not allowed: '${command}'`,
-                hint: "Only read-only 'show' commands are permitted through this tool.",
-                allowed_commands: ALLOWED_SHOW_COMMANDS,
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-        isError: true,
-      };
+      case "ping": {
+        if (!target) throw new Error("'target' parameter required for action='ping'");
+        return queryPing(dev, target);
+      }
+      default:
+        throw new Error(`Unknown action: '${action}'`);
     }
-
-    const dev = getDeviceOrThrow(device_id);
-    const output = await withSession(dev, (s) => runCommand(s, command, 3000));
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({ device_id, command, output }, null, 2),
-        },
-      ],
-    };
   },
 );
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tool: island_ping
-// ═══════════════════════════════════════════════════════════════════════════════
+// ─── Tool 3: island_configure (all write operations, guarded) ────────────────
+
+const ConfigureActions = z.enum([
+  "add_dhcp",       // Add DHCP reservation (mac, ip, hostname?)
+  "remove_dhcp",    // Remove DHCP reservation (mac)
+  "set_syslog",     // Configure syslog forwarding (server_ip, port?, level?, protocol?)
+]);
 
 server.tool(
-  "island_ping",
-  "Send an ICMP ping from the Island Router to test reachability of a host. Returns raw ping output.",
+  "island_configure",
+  `WRITE operation on an Island Router — persists changes with 'write memory'. Requires confirmation_phrase='apply_change'. Actions: add_dhcp (mac, ip, hostname?), remove_dhcp (mac), set_syslog (server_ip, port?, level?, protocol?).`,
   {
-    device_id: z.string().describe("ID of the Island Router device"),
-    target: z.string().describe("IP address or hostname to ping"),
+    device_id: z.string().describe("Device ID from inventory"),
+    action: ConfigureActions.describe("Configuration action"),
+    confirmation_phrase: z.literal("apply_change").describe("Must be exactly 'apply_change' to proceed"),
+    // DHCP params
+    mac: z.string().optional().describe("MAC address (for add_dhcp / remove_dhcp)"),
+    ip: z.string().optional().describe("IPv4 address (for add_dhcp)"),
+    hostname: z.string().optional().describe("Hostname label (for add_dhcp)"),
+    // Syslog params
+    server_ip: z.string().optional().describe("Syslog server IP (for set_syslog)"),
+    port: z.number().optional().default(514).describe("Syslog port (for set_syslog, default 514)"),
+    level: z.enum(["debug", "info", "notice", "warning", "error", "critical"]).optional().default("info").describe("Syslog severity level"),
+    protocol: z.enum(["udp", "tcp"]).optional().default("udp").describe("Syslog transport protocol"),
   },
-  async ({ device_id, target }) => {
-    // Validate target — basic sanity check
-    if (/[;&|`$(){}]/.test(target)) {
-      throw new Error("Invalid target — contains shell metacharacters");
-    }
-
-    const dev = getDeviceOrThrow(device_id);
-    const output = await withSession(dev, (s) => runCommand(s, `ping ${target}`, 10000));
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({ device_id, target, output }, null, 2),
-        },
-      ],
-    };
-  },
-);
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tool: island_add_dhcp_reservation (WRITE — guarded)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-server.tool(
-  "island_add_dhcp_reservation",
-  "Add a DHCP reservation on an Island Router, permanently binding a MAC address to an IP address. WRITE operation — persists the change with 'write memory'. Requires exact confirmation phrase 'apply_change' to proceed.",
-  {
-    device_id: z.string().describe("ID of the Island Router device"),
-    mac: z.string().describe("MAC address (e.g., 'aa:bb:cc:dd:ee:ff')"),
-    ip: z.string().describe("IPv4 address to reserve (e.g., '192.168.2.100')"),
-    hostname: z
-      .string()
-      .optional()
-      .describe("Optional hostname label for the reservation"),
-    confirmation_phrase: z
-      .literal("apply_change")
-      .describe("Must be exactly 'apply_change' to proceed — prevents accidental writes"),
-  },
-  async ({ device_id, mac, ip, hostname, confirmation_phrase }) => {
+  async ({ device_id, action, confirmation_phrase, mac, ip, hostname, server_ip, port, level, protocol }) => {
     if (confirmation_phrase !== "apply_change") {
       throw new Error("confirmation_phrase must be exactly 'apply_change'");
     }
 
-    // Validate MAC format
-    if (!/^([0-9a-fA-F]{2}[:\-.]){5}[0-9a-fA-F]{2}$/.test(mac)) {
-      throw new Error(`Invalid MAC address format: '${mac}'`);
-    }
-
-    // Validate IP format
-    if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) {
-      throw new Error(`Invalid IPv4 address format: '${ip}'`);
-    }
-
     const dev = getDeviceOrThrow(device_id);
 
-    const result = await withSession(dev, async (session) => {
-      // Enter config mode
-      await runCommand(session, "configure terminal", 1500);
-
-      // Apply the DHCP reservation
-      let cmd = `ip dhcp-reserve ${mac} ${ip}`;
-      if (hostname) cmd += ` ${hostname}`;
-      const configOutput = await runCommand(session, cmd, 2000);
-
-      // Exit config mode
-      await runCommand(session, "end", 1000);
-
-      // Persist
-      const writeOutput = await runCommand(session, "write memory", 3000);
-
-      // Verify
-      const verifyOutput = await runCommand(session, "show ip dhcp-reservations", 2000);
-
-      return { configOutput, writeOutput, verifyOutput };
-    });
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify(
-            {
-              applied: true,
-              device_id,
-              mac,
-              ip,
-              hostname: hostname ?? null,
-              config_output: result.configOutput,
-              write_output: result.writeOutput,
-              current_reservations: result.verifyOutput,
-            },
-            null,
-            2,
-          ),
-        },
-      ],
-    };
+    switch (action) {
+      case "add_dhcp": {
+        if (!mac) throw new Error("'mac' required for add_dhcp");
+        if (!ip) throw new Error("'ip' required for add_dhcp");
+        return configAddDhcp(dev, mac, ip, hostname);
+      }
+      case "remove_dhcp": {
+        if (!mac) throw new Error("'mac' required for remove_dhcp");
+        return configRemoveDhcp(dev, mac);
+      }
+      case "set_syslog": {
+        if (!server_ip) throw new Error("'server_ip' required for set_syslog");
+        return configSyslog(dev, server_ip, port, level, protocol);
+      }
+      default:
+        throw new Error(`Unknown configure action: '${action}'`);
+    }
   },
 );
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tool: island_remove_dhcp_reservation (WRITE — guarded)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-server.tool(
-  "island_remove_dhcp_reservation",
-  "Remove a DHCP reservation from an Island Router by MAC address. WRITE operation — persists with 'write memory'. Requires confirmation phrase 'apply_change'.",
-  {
-    device_id: z.string().describe("ID of the Island Router device"),
-    mac: z.string().describe("MAC address of the reservation to remove"),
-    confirmation_phrase: z
-      .literal("apply_change")
-      .describe("Must be exactly 'apply_change' to proceed"),
-  },
-  async ({ device_id, mac, confirmation_phrase }) => {
-    if (confirmation_phrase !== "apply_change") {
-      throw new Error("confirmation_phrase must be exactly 'apply_change'");
-    }
-
-    if (!/^([0-9a-fA-F]{2}[:\-.]){5}[0-9a-fA-F]{2}$/.test(mac)) {
-      throw new Error(`Invalid MAC address format: '${mac}'`);
-    }
-
-    const dev = getDeviceOrThrow(device_id);
-
-    const result = await withSession(dev, async (session) => {
-      await runCommand(session, "configure terminal", 1500);
-      const configOutput = await runCommand(session, `no ip dhcp-reserve ${mac}`, 2000);
-      await runCommand(session, "end", 1000);
-      const writeOutput = await runCommand(session, "write memory", 3000);
-      const verifyOutput = await runCommand(session, "show ip dhcp-reservations", 2000);
-
-      return { configOutput, writeOutput, verifyOutput };
-    });
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify(
-            {
-              removed: true,
-              device_id,
-              mac,
-              config_output: result.configOutput,
-              write_output: result.writeOutput,
-              current_reservations: result.verifyOutput,
-            },
-            null,
-            2,
-          ),
-        },
-      ],
-    };
-  },
-);
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tool: island_configure_syslog (WRITE — guarded)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-server.tool(
-  "island_configure_syslog",
-  "Configure syslog forwarding on an Island Router. Sets the remote syslog server IP, severity level, and protocol. WRITE operation — persists with 'write memory'. Requires confirmation phrase 'apply_change'.",
-  {
-    device_id: z.string().describe("ID of the Island Router device"),
-    server_ip: z.string().describe("IP address of the syslog server (e.g., '192.168.2.50')"),
-    port: z
-      .number()
-      .optional()
-      .default(514)
-      .describe("Syslog port (default: 514)"),
-    level: z
-      .enum(["debug", "info", "notice", "warning", "error", "critical"])
-      .optional()
-      .default("info")
-      .describe("Minimum severity level to forward"),
-    protocol: z
-      .enum(["udp", "tcp"])
-      .optional()
-      .default("udp")
-      .describe("Transport protocol"),
-    confirmation_phrase: z
-      .literal("apply_change")
-      .describe("Must be exactly 'apply_change' to proceed"),
-  },
-  async ({ device_id, server_ip, port, level, protocol, confirmation_phrase }) => {
-    if (confirmation_phrase !== "apply_change") {
-      throw new Error("confirmation_phrase must be exactly 'apply_change'");
-    }
-
-    if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(server_ip)) {
-      throw new Error(`Invalid syslog server IP: '${server_ip}'`);
-    }
-
-    const dev = getDeviceOrThrow(device_id);
-
-    const result = await withSession(dev, async (session) => {
-      await runCommand(session, "configure terminal", 1500);
-      await runCommand(session, `syslog server ${server_ip} ${port}`, 2000);
-      await runCommand(session, `syslog level ${level}`, 1500);
-      await runCommand(session, `syslog protocol ${protocol}`, 1500);
-      await runCommand(session, "end", 1000);
-      const writeOutput = await runCommand(session, "write memory", 3000);
-      const verifyOutput = await runCommand(session, "show syslog", 2000);
-
-      return { writeOutput, verifyOutput };
-    });
-
-    const verifiedConfig = parseSyslogConfig(result.verifyOutput);
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify(
-            {
-              configured: true,
-              device_id,
-              server_ip,
-              port,
-              level,
-              protocol,
-              write_output: result.writeOutput,
-              verified_config: verifiedConfig,
-            },
-            null,
-            2,
-          ),
-        },
-      ],
-    };
-  },
-);
-
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════════
 // Server startup
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════════
 
 async function main() {
   process.stderr.write(
-    `[island-mcp] Starting Island Router MCP server v0.1.0 with ${devices.length} device(s)\n`,
+    `[island-mcp] Starting v0.2.0 (meta-tool) with ${devices.length} device(s)\n`,
   );
   const transport = new StdioServerTransport();
   await server.connect(transport);

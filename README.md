@@ -12,25 +12,40 @@ This project provides two things:
 
 ### 🔧 MCP Server
 
-A TypeScript server that connects to Island Routers over SSH and exposes their Cisco-style CLI as **13 MCP tools** — enabling AI assistants to query router status, manage DHCP reservations, configure syslog forwarding, and more, all through natural language.
+A TypeScript server that connects to Island Routers over SSH and exposes their Cisco-style CLI through **3 meta-tools** — designed to minimize token usage while covering all router operations.
 
-| Tool | Type | What It Does |
+#### `island_list_devices`
+Lists configured devices from the inventory. No SSH connection required.
+
+#### `island_query` — All Read-Only Operations
+
+A single tool for all read operations, dispatched by `action`:
+
+| Action | What It Returns |
+|---|---|
+| `status` | Full overview — interfaces, routes, neighbors, version, stats, clock |
+| `interfaces` | Parsed interface data (set `detail: true` for TX/RX byte counters) |
+| `neighbors` | Parsed ARP table (IP → MAC → interface → state) |
+| `routes` | Parsed routing table with destinations, gateways, metrics |
+| `logs` | Parsed log entries + syslog forwarding configuration |
+| `config` | Full running-config text |
+| `vpns` | VPN peer status |
+| `command` | Run any allowlisted `show` command (pass `command` param) |
+| `ping` | ICMP ping from the router (pass `target` param) |
+
+#### `island_configure` — All Write Operations (Guarded)
+
+A single tool for all config mutations, dispatched by `action`. Every call requires `confirmation_phrase: "apply_change"` to prevent accidental changes.
+
+| Action | Params | What It Does |
 |---|---|---|
-| `island_list_devices` | Read | List configured devices in inventory |
-| `island_show_status` | Read | Comprehensive router overview (interfaces, routes, neighbors, version, stats) |
-| `island_show_interfaces` | Read | Parsed interface data with TX/RX byte counters |
-| `island_show_neighbors` | Read | Parsed ARP table (IP → MAC → interface → state) |
-| `island_show_routes` | Read | Parsed routing table |
-| `island_show_logs` | Read | Parsed log entries + syslog configuration |
-| `island_show_config` | Read | Full running configuration |
-| `island_show_vpns` | Read | VPN peer status |
-| `island_run_command` | Read | Run any allowlisted `show` command |
-| `island_ping` | Read | ICMP ping from the router |
-| `island_add_dhcp_reservation` | **Write** | Add a MAC → IP DHCP binding |
-| `island_remove_dhcp_reservation` | **Write** | Remove a DHCP reservation |
-| `island_configure_syslog` | **Write** | Set syslog server, level, and protocol |
+| `add_dhcp` | `mac`, `ip`, `hostname?` | Add a MAC → IP DHCP reservation |
+| `remove_dhcp` | `mac` | Remove a DHCP reservation |
+| `set_syslog` | `server_ip`, `port?`, `level?`, `protocol?` | Configure syslog forwarding |
 
-All **write operations** require an explicit `confirmation_phrase: "apply_change"` parameter to prevent accidental configuration changes. Read-only commands are restricted to an allowlist of safe `show` commands.
+#### Why Meta-Tools?
+
+Traditional MCP servers register one tool per operation (13+ tools). Each tool's schema is serialized into every LLM request, consuming tokens even when unused. The meta-tool pattern consolidates related operations behind a single schema with an `action` discriminator — **reducing schema overhead by ~80%** while preserving full functionality.
 
 ### 📖 Agent Skill (CLI Reference)
 
@@ -116,7 +131,7 @@ Supports `"authMethod": "key"` with a `"privateKeyPath"` field for SSH key-based
 
 ```
 src/
-  server.ts              # MCP server — all 13 tools defined here
+  server.ts              # MCP server — 3 meta-tools with action dispatch
   islandSsh.ts           # Interactive shell SSH client (uses ssh2 shell(), not exec())
   parsers/
     interfaces.ts        # Parses show interface / show interface summary
@@ -128,9 +143,9 @@ src/
 
 ## Safety
 
-- **Read-only by default** — most tools only run `show` commands
-- **Allowlisted commands** — `island_run_command` only permits a curated list of safe commands
-- **Write confirmation** — all config-changing tools require `confirmation_phrase: "apply_change"`
+- **Read-only by default** — `island_query` only runs `show` commands
+- **Allowlisted commands** — the `command` action only permits a curated list of safe commands
+- **Write confirmation** — `island_configure` requires `confirmation_phrase: "apply_change"`
 - **Input validation** — MAC addresses and IP addresses are validated before being sent to the router
 - **Shell injection prevention** — ping targets are checked for metacharacters
 - **No hardcoded secrets** — passwords come from env vars or the device inventory file (git-ignored)
