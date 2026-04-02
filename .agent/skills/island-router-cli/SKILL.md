@@ -616,26 +616,23 @@ no snmp-server                    # Remove SNMP configuration
 
 ### Device Data Usage Reporting
 
-To get per-device bandwidth data, poll these commands and parse:
+**Critical Limitation:** The Island Router **lacks native historical per-device accounting metrics** (i.e. it does not maintain cumulative byte tallies per client IP or MAC address).
+
+To track per-device bandwidth data, you must heuristically proxy it using global interface stats combined with actively leased devices.
 
 ```python
-# Neighbors (ARP table) — cross-reference MACs to IPs
-output = run_command(channel, "show ip neighbors")
+# Interface byte counters — parse precise TX/RX cumulative bytes per interface
+output = run_command(channel, "show stats json interfaces")
 
-# Interface byte counters — parse TX/RX bytes per interface
-output = run_command(channel, "show interface")
-
-# Active socket connections — per-connection view
-output = run_command(channel, "show ip sockets")
-
-# System-wide stats summary
-output = run_command(channel, "show stats")
+# Active DHCP clients - map active dynamic IP/MAC address statuses
+output = run_command(channel, "show stats json dhcpd")
 ```
 
 Parse strategy:
-- `show ip neighbors` → maps `{ip: mac}` so you can correlate with DHCP reservations
-- `show interface` → provides cumulative TX/RX byte counters per physical interface
-- Diff counter snapshots between polls to compute delta (bytes/sec or bytes/period)
+- Query `show stats json interfaces` to calculate true network-wide byte consumption diffs over your polling interval.
+- Query `show stats json dhcpd` to identify online devices.
+- Mathematically distribute/weight the global network spikes across the actively leased devices, enabling extremely realistic visual proxies without resource-draining TCPDump operations.
+- **WARNING**: Always maintain one persistent SSH connection instead of invoking one-shot commands rapidly. Frequent new SSH connections will immediately lock the router's rate limiter (see Error Handling).
 
 ### DHCP Reservation Automation
 
@@ -743,7 +740,7 @@ show vpns
 - **Config not persisting** — forgot to run `write memory`
 - **Pager blocking output** — send `terminal length 0` first in any automated session
 - **SSH host key rejection** — may need to clear known hosts or add `StrictHostKeyChecking=no` in paramiko
-- **SSH rate-limiting** — router may temporarily block connections after multiple failed auth attempts; wait 60+ seconds
+- **SSH rate-limiting** — The router's SSH daemon strictly enforces rate limits (`MaxStartups`). Launching multiple parallel one-shot connections or polling too rapidly will cause total SSH gridlock (yielding `EOF / Timeout` or `client is closing` errors on all subsequent attempts). To prevent this, always rely on long-lived persistent SSH sessions. If locked out, wait for the connection queue to decay naturally (often >5 minutes) or reboot the router.
 
 ---
 

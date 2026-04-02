@@ -61,6 +61,8 @@ Build end-to-end log ingestion pipelines from network devices and servers to Gra
 
 ### Network Devices (Island Router example)
 
+> **⚠️ Island Router Constraint**: Island routers **do not natively transmit per-device byte tallies** or historical cumulative bandwidth over syslog. You must use a heuristic polling daemon combined with `show stats json dhcpd` and `show stats json interfaces` to proxy this data. Also, be exceptionally careful to avoid rapid polling intervals or concurrent SSH invocations, as the router will drop all connections (yielding EOF errors) when its `MaxStartups` rate limit engages.
+
 On the router CLI:
 
 ```
