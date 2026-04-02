@@ -38,7 +38,7 @@ try {
     {
       id: process.env["ISLAND_DEVICE_ID"] ?? "island-default",
       host: process.env["ROUTER_IP"] ?? process.env["ROUTER_HOST"] ?? "192.168.2.1", // NOSONAR
-      port: parseInt(process.env["ROUTER_PORT"] ?? "22", 10),
+      port: Number.parseInt(process.env["ROUTER_PORT"] ?? "22", 10),
       username: process.env["ROUTER_USER"] ?? "admin",
       authMethod: "password" as const,
       description: "Default Island Router (from env)",
@@ -256,7 +256,7 @@ async function configSyslog(
   const result = await withSession(dev, async (s) => {
     await runCommand(s, "configure terminal", 1500);
     // Syslog server uses colon separator: syslog server <IP>:<port>
-    const serverArg = port !== 514 ? `${serverIp}:${port}` : serverIp;
+    const serverArg = port === 514 ? serverIp : `${serverIp}:${port}`;
     await runCommand(s, `syslog server ${serverArg}`, 2000);
     await runCommand(s, `syslog level ${level}`, 1500);
     await runCommand(s, `syslog protocol ${protocol}`, 1500);
@@ -407,15 +407,8 @@ server.tool(
 // Server startup
 // ═════════════════════════════════════════════════════════════════════════════
 
-async function main() {
-  process.stderr.write(
-    `[island-mcp] Starting v0.2.0 (meta-tool) with ${devices.length} device(s)\n`,
-  );
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-}
-
-main().catch((err) => {
-  process.stderr.write(`[island-mcp] Fatal error: ${err}\n`);
-  process.exit(1);
-});
+process.stderr.write(
+  `[island-mcp] Starting v0.2.0 (meta-tool) with ${devices.length} device(s)\n`,
+);
+const transport = new StdioServerTransport();
+await server.connect(transport);

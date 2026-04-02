@@ -60,15 +60,24 @@ export function parseInterfaceSummary(raw: string): InterfaceSummary[] {
     const parts = line.split(/\s+/);
     if (parts.length >= 3) {
       results.push({
-        name: parts[0]!,
-        status: parts[1]!,
-        protocol: parts[2]!,
+        name: parts[0] ?? "",
+        status: parts[1] ?? "",
+        protocol: parts[2] ?? "",
         description: parts.slice(3).join(" "),
       });
     }
   }
 
   return results;
+}
+
+// Simplified MAC regex: two hex chars separated by a consistent delimiter
+const MAC_RE = /([0-9a-fA-F]{2}[:.‑-][0-9a-fA-F]{2}[:.‑-][0-9a-fA-F]{2}[:.‑-][0-9a-fA-F]{2}[:.‑-][0-9a-fA-F]{2}[:.‑-][0-9a-fA-F]{2})/;
+
+/** Extract a numeric stat from the block, returning null if not found. */
+function extractStat(block: string, pattern: RegExp): number | null {
+  const m = pattern.exec(block);
+  return m ? Number.parseInt(m[1] ?? "0", 10) : null;
 }
 
 /**
@@ -90,12 +99,12 @@ export function parseInterfaceDetail(raw: string): InterfaceDetail[] {
     const header = lines[0] ?? "";
 
     // Parse header: "ethernet1 is up, line protocol is up"
-    const headerMatch = header.match(/^(\S+)\s+is\s+(\S+)/);
+    const headerMatch = /^(\S+)\s+is\s+(\S+)/.exec(header);
     if (!headerMatch) continue;
 
     const detail: InterfaceDetail = {
-      name: headerMatch[1]!,
-      status: headerMatch[2]!.replace(",", ""),
+      name: headerMatch[1] ?? "",
+      status: (headerMatch[2] ?? "").replace(",", ""),
       mtu: null,
       macAddress: null,
       txBytes: null,
@@ -108,43 +117,25 @@ export function parseInterfaceDetail(raw: string): InterfaceDetail[] {
       duplex: null,
     };
 
-    const fullBlock = block.toLowerCase();
+    const lower = block.toLowerCase();
 
-    // Extract MTU
-    const mtuMatch = fullBlock.match(/mtu\s+(\d+)/);
-    if (mtuMatch) detail.mtu = parseInt(mtuMatch[1]!, 10);
+    detail.mtu = extractStat(lower, /mtu\s+(\d+)/);
 
-    // Extract MAC
-    const macMatch = block.match(/([0-9a-fA-F]{2}(?:[:\-.]){1}[0-9a-fA-F]{2}(?:[:\-.]){1}[0-9a-fA-F]{2}(?:[:\-.]){1}[0-9a-fA-F]{2}(?:[:\-.]){1}[0-9a-fA-F]{2}(?:[:\-.]){1}[0-9a-fA-F]{2})/);
-    if (macMatch) detail.macAddress = macMatch[1]!;
+    const macMatch = MAC_RE.exec(block);
+    if (macMatch) detail.macAddress = macMatch[1] ?? null;
 
-    // Extract TX/RX bytes
-    const txBytesMatch = fullBlock.match(/(\d+)\s+(?:(?:bytes|byte)\s+)?(?:output|tx|sent)/);
-    if (txBytesMatch) detail.txBytes = parseInt(txBytesMatch[1]!, 10);
+    detail.txBytes   = extractStat(lower, /(\d+)\s+(?:(?:bytes|byte)\s+)?(?:output|tx|sent)/);
+    detail.rxBytes   = extractStat(lower, /(\d+)\s+(?:(?:bytes|byte)\s+)?(?:input|rx|received)/);
+    detail.txPackets = extractStat(lower, /(\d+)\s+(?:(?:packets|packet)\s+)?(?:output|tx|sent)/);
+    detail.rxPackets = extractStat(lower, /(\d+)\s+(?:(?:packets|packet)\s+)?(?:input|rx|received)/);
+    detail.txErrors  = extractStat(lower, /(\d+)\s+(?:(?:output|tx)\s+)?errors?/);
+    detail.rxErrors  = extractStat(lower, /(\d+)\s+(?:(?:input|rx)\s+)?errors?/);
 
-    const rxBytesMatch = fullBlock.match(/(\d+)\s+(?:(?:bytes|byte)\s+)?(?:input|rx|received)/);
-    if (rxBytesMatch) detail.rxBytes = parseInt(rxBytesMatch[1]!, 10);
+    const speedMatch = /(?:speed|bw)\s+(\S+)/.exec(lower);
+    if (speedMatch) detail.speed = speedMatch[1] ?? null;
 
-    // Extract TX/RX packets
-    const txPktsMatch = fullBlock.match(/(\d+)\s+(?:(?:packets|packet)\s+)?(?:output|tx|sent)/);
-    if (txPktsMatch) detail.txPackets = parseInt(txPktsMatch[1]!, 10);
-
-    const rxPktsMatch = fullBlock.match(/(\d+)\s+(?:(?:packets|packet)\s+)?(?:input|rx|received)/);
-    if (rxPktsMatch) detail.rxPackets = parseInt(rxPktsMatch[1]!, 10);
-
-    // Extract errors
-    const txErrMatch = fullBlock.match(/(\d+)\s+(?:(?:output|tx)\s+)?errors?/);
-    if (txErrMatch) detail.txErrors = parseInt(txErrMatch[1]!, 10);
-
-    const rxErrMatch = fullBlock.match(/(\d+)\s+(?:(?:input|rx)\s+)?errors?/);
-    if (rxErrMatch) detail.rxErrors = parseInt(rxErrMatch[1]!, 10);
-
-    // Extract speed/duplex
-    const speedMatch = fullBlock.match(/(?:speed|bw)\s+(\S+)/);
-    if (speedMatch) detail.speed = speedMatch[1]!;
-
-    const duplexMatch = fullBlock.match(/duplex\s+(\S+)/i);
-    if (duplexMatch) detail.duplex = duplexMatch[1]!;
+    const duplexMatch = /duplex\s+(\S+)/i.exec(block);
+    if (duplexMatch) detail.duplex = duplexMatch[1] ?? null;
 
     results.push(detail);
   }

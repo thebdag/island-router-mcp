@@ -18,6 +18,17 @@ export interface Neighbor {
   state: string;
 }
 
+// Pre-compiled regexes
+const VIA_RE = /^([A-Z*]+)\s+(\S+)\s+(?:\[(\d+)(?:\/\d+)?]\s+)?via\s+([^,\s]+),?\s*(\S*)$/i;
+const DIRECT_RE = /^([A-Z*]+)\s+(\S+)\s+is\s+directly\s+connected,?\s*(\S*)$/i;
+const IP_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+
+/** Split a CIDR destination into separate destination and mask fields. */
+function splitCidr(dest: string): { destination: string; mask: string } {
+  const [destination, mask] = dest.split("/");
+  return { destination: destination ?? "", mask: mask ? `/${mask}` : "" };
+}
+
 /**
  * Parse `show ip routes` output.
  *
@@ -34,33 +45,29 @@ export function parseRoutes(raw: string): Route[] {
     if (/^codes/i.test(line) || /^gateway/i.test(line) || line.startsWith("---")) continue;
 
     // Pattern: TYPE  dest/mask  [metric] via gateway, interface
-    const viaMatch = line.match(
-      /^([A-Z*]+)\s+(\S+)\s+(?:\[(\d+)(?:\/\d+)?\]\s+)?via\s+([^,\s]+),?\s*(\S*)$/i,
-    );
+    const viaMatch = VIA_RE.exec(line);
     if (viaMatch) {
       const [, type, dest, metric, gw, iface] = viaMatch;
-      const [destination, mask] = (dest ?? "").split("/");
+      const { destination, mask } = splitCidr(dest ?? "");
       results.push({
-        destination: destination ?? "",
-        mask: mask ? `/${mask}` : "",
+        destination,
+        mask,
         gateway: gw ?? "",
         interface: iface ?? "",
-        metric: metric ? parseInt(metric, 10) : null,
+        metric: metric ? Number.parseInt(metric, 10) : null,
         type: type ?? "",
       });
       continue;
     }
 
     // Pattern: TYPE  dest/mask  is directly connected, interface
-    const directMatch = line.match(
-      /^([A-Z*]+)\s+(\S+)\s+is\s+directly\s+connected,?\s*(\S*)$/i,
-    );
+    const directMatch = DIRECT_RE.exec(line);
     if (directMatch) {
       const [, type, dest, iface] = directMatch;
-      const [destination, mask] = (dest ?? "").split("/");
+      const { destination, mask } = splitCidr(dest ?? "");
       results.push({
-        destination: destination ?? "",
-        mask: mask ? `/${mask}` : "",
+        destination,
+        mask,
         gateway: "directly connected",
         interface: iface ?? "",
         metric: null,
@@ -97,16 +104,13 @@ export function parseNeighbors(raw: string): Neighbor[] {
 
     // Match: IP  MAC  Interface  State
     const parts = line.split(/\s+/);
-    if (parts.length >= 4) {
-      // Validate that the first part looks like an IP
-      if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(parts[0]!)) {
-        results.push({
-          ip: parts[0]!,
-          mac: parts[1]!,
-          interface: parts[2]!,
-          state: parts.slice(3).join(" "),
-        });
-      }
+    if (parts.length >= 4 && IP_RE.test(parts[0] ?? "")) {
+      results.push({
+        ip: parts[0] ?? "",
+        mac: parts[1] ?? "",
+        interface: parts[2] ?? "",
+        state: parts.slice(3).join(" "),
+      });
     }
   }
 
