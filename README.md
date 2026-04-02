@@ -201,8 +201,8 @@ Supports `"authMethod": "key"` with a `"privateKeyPath"` field for SSH key-based
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `ROUTER_IP` | Router IP address (preferred) | `192.168.2.1` |
-| `ROUTER_HOST` | Router IP address (legacy alias for `ROUTER_IP`) | `192.168.2.1` |
+| `ROUTER_IP` | Router IP address (preferred) | `192.168.X.X` |
+| `ROUTER_HOST` | Router IP address (legacy alias for `ROUTER_IP`) | `192.168.X.X` |
 | `ROUTER_PASS` | Admin password — wrap in single quotes if it contains `!`, `@`, `^`, `&` | — |
 | `ROUTER_KEY` | SSH private key content for key-based auth (full key, not a file path) | — |
 | `ROUTER_PORT` | SSH port | `22` |
