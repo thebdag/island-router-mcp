@@ -6,6 +6,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ---
 
+## [0.3.0] — 2026-04-01
+
+### Changed
+- **SKILL.md**: Complete rewrite with exhaustive CLI reference auto-discovered from live router (3,136 commands across EXEC and CONFIG modes). Added SNMP, tcpdump, speed test, event history format specifiers, DNS-over-HTTPS providers, and VPN server configuration sections.
+- **Syslog syntax fix**: Changed `syslog server <IP> <port>` to `syslog server <IP>:<port>` — the router uses a colon separator, not a space.
+- **Expanded show command allowlist**: Added `show speedtest`, `show config email` to `ALLOWED_SHOW_COMMANDS` in `server.ts`.
+- **CODING-STANDARDS.md**: Added SSH rate-limiting guidance, password quoting rules, CLI syntax corrections table, `dotenv` dependency docs, `ROUTER_IP`/`ROUTER_KEY` env var documentation, and a "Discovered Capabilities Not Yet Exposed" roadmap section.
+- **REPOMAP.md**: Restructured to show parent workspace (`island-router-cli/`) with discovery scripts alongside `island-mcp-server/`. Added discovery data files to Key Files table.
+- **README.md**: Expanded environment variables documentation (`ROUTER_IP`, `ROUTER_KEY`, `ROUTER_HOST`), added CLI discovery reference and troubleshooting section for SSH rate-limiting and password quoting.
+
+### Fixed
+- `configSyslog()` in `server.ts` now uses colon-separated `IP:port` format for the `syslog server` command, matching the router's actual CLI syntax.
+- Added `ROUTER_IP` as preferred alias for `ROUTER_HOST` in env var documentation.
+
 ## [0.2.0] — 2025-04-01
 
 ### Changed

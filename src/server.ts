@@ -12,6 +12,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import fs from "node:fs";
+import "dotenv/config";
 
 import {
   openSession,
@@ -36,7 +37,7 @@ try {
   devices = [
     {
       id: process.env["ISLAND_DEVICE_ID"] ?? "island-default",
-      host: process.env["ROUTER_HOST"] ?? "192.168.2.1",
+      host: process.env["ROUTER_IP"] ?? process.env["ROUTER_HOST"] ?? "192.168.2.1",
       port: parseInt(process.env["ROUTER_PORT"] ?? "22", 10),
       username: process.env["ROUTER_USER"] ?? "admin",
       authMethod: "password" as const,
@@ -68,6 +69,8 @@ const ALLOWED_SHOW_COMMANDS = [
   "show ip sockets", "show ip dhcp-reservations", "show ip recommendations",
   "show vpns", "show ntp", "show syslog", "show log", "show stats",
   "show config authorized-keys", "show config known-hosts", "show ssh-client-keys",
+  // Added from CLI discovery (2026-04-01)
+  "show speedtest", "show config email",
 ];
 
 function isCommandAllowed(cmd: string): boolean {
@@ -252,7 +255,9 @@ async function configSyslog(
 
   const result = await withSession(dev, async (s) => {
     await runCommand(s, "configure terminal", 1500);
-    await runCommand(s, `syslog server ${serverIp} ${port}`, 2000);
+    // Syslog server uses colon separator: syslog server <IP>:<port>
+    const serverArg = port !== 514 ? `${serverIp}:${port}` : serverIp;
+    await runCommand(s, `syslog server ${serverArg}`, 2000);
     await runCommand(s, `syslog level ${level}`, 1500);
     await runCommand(s, `syslog protocol ${protocol}`, 1500);
     await runCommand(s, "end", 1000);

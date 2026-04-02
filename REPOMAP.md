@@ -11,57 +11,68 @@
 ## Directory Structure
 
 ```
-island-router-mcp/
+island-router-cli/                # Parent workspace
+├── SKILL.md                      # Exhaustive CLI reference (canonical, auto-discovered)
+├── scripts/                      # CLI discovery tooling
+│   ├── cli_discovery.py          # Recursive CLI crawler (paramiko, interactive shell)
+│   ├── cli_discovery_results.json  # Full command tree (JSON, 3,136 commands)
+│   ├── cli_commands_flat.txt     # Flat text reference of all commands
+│   └── island_router.py          # Core SSH client library (Python)
 │
-├── src/                          # TypeScript source
-│   ├── server.ts                 # MCP server entrypoint — 3 meta-tools defined here
-│   ├── islandSsh.ts              # SSH client (interactive shell via ssh2)
-│   └── parsers/                  # CLI output → structured JSON
-│       ├── interfaces.ts         # show interface / show interface summary
-│       ├── routes.ts             # show ip routes / show ip neighbors
-│       └── logs.ts               # show log / show syslog
-│
-├── build/                        # Compiled JS output (git-ignored)
-│
-├── .agent/
-│   └── skills/                   # AI-readable skill references
-│       ├── island-router-cli/    # CLI reference (firmware 2.3.2)
-│       ├── skill-mcp-builder/    # MCP server development guide
-│       ├── skill-observability-pipeline/  # Syslog → Grafana pipeline
-│       ├── skill-finops-gcp/     # GCP cost analysis & automation
-│       ├── skill-meta-pipeline/  # Skill lifecycle orchestrator
-│       ├── skill-network-fleet/  # Multi-device fleet management
-│       ├── skill-mcp-orchestrator/  # Cross-MCP workflow chains
-│       ├── skill-homelab-pi/     # Raspberry Pi homelab management
-│       ├── skill-publisher/      # Skill publishing pipeline
-│       ├── skill-firmware-differ/  # Firmware upgrade planner
-│       └── skill-knowledge-harvester/  # Conversation → KI extractor
-│
-├── package.json                  # ESM project config
-├── tsconfig.json                 # TypeScript compiler settings
-├── devices.example.json          # Template device inventory
-├── devices.json                  # Real device config (git-ignored)
-├── .gitignore
-├── README.md
-├── REPOMAP.md                    # ← You are here
-├── CHANGELOG.md                  # Version history
-└── CODING-STANDARDS.md           # Development conventions
+└── island-mcp-server/            # MCP server (this repo)
+    │
+    ├── src/                      # TypeScript source
+    │   ├── server.ts             # MCP server entrypoint — 3 meta-tools defined here
+    │   ├── islandSsh.ts          # SSH client (interactive shell via ssh2)
+    │   └── parsers/              # CLI output → structured JSON
+    │       ├── interfaces.ts     # show interface / show interface summary
+    │       ├── routes.ts         # show ip routes / show ip neighbors
+    │       └── logs.ts           # show log / show syslog
+    │
+    ├── build/                    # Compiled JS output (git-ignored)
+    │
+    ├── .agent/
+    │   └── skills/               # AI-readable skill references (mirror of ../SKILL.md)
+    │       ├── island-router-cli/    # CLI reference (firmware 2.3.2)
+    │       ├── skill-mcp-builder/    # MCP server development guide
+    │       ├── skill-observability-pipeline/  # Syslog → Grafana pipeline
+    │       ├── skill-finops-gcp/     # GCP cost analysis & automation
+    │       ├── skill-meta-pipeline/  # Skill lifecycle orchestrator
+    │       ├── skill-network-fleet/  # Multi-device fleet management
+    │       ├── skill-mcp-orchestrator/  # Cross-MCP workflow chains
+    │       ├── skill-homelab-pi/     # Raspberry Pi homelab management
+    │       ├── skill-publisher/      # Skill publishing pipeline
+    │       ├── skill-firmware-differ/  # Firmware upgrade planner
+    │       └── skill-knowledge-harvester/  # Conversation → KI extractor
+    │
+    ├── package.json              # ESM project config
+    ├── tsconfig.json             # TypeScript compiler settings
+    ├── devices.example.json      # Template device inventory
+    ├── devices.json              # Real device config (git-ignored)
+    ├── .gitignore
+    ├── README.md
+    ├── REPOMAP.md                # ← You are here
+    ├── CHANGELOG.md              # Version history
+    └── CODING-STANDARDS.md       # Development conventions
 ```
 
 ## Key Files
 
 | File | Purpose | Entry Point? |
-|---|---|---|
+| --- | --- | --- |
 | `src/server.ts` | MCP server — all tool registration and dispatch logic | ✅ `node build/server.js` |
 | `src/islandSsh.ts` | SSH session management — `openSession()`, `runCommand()`, `closeSession()` | |
 | `src/parsers/*.ts` | Transform raw CLI text into typed objects | |
 | `devices.json` | Runtime device inventory (not committed) | |
+| `../SKILL.md` | Canonical CLI reference — exhaustive, auto-discovered from live router | |
+| `../scripts/cli_discovery_results.json` | Full command tree (3,136 commands) — structured JSON | |
+| `../scripts/cli_discovery.py` | Recursive CLI crawler for re-running discovery | |
 
 ## Agent Skills
 
 | Skill | Domain | Purpose |
 |---|---|---|
-| `island-router-cli` | Networking | CLI command reference for Island Router firmware 2.3.2 |
+| `island-router-cli` | Networking | Exhaustive CLI reference for Island Router firmware 2.3.2 — auto-discovered 3,136 commands, SNMP, tcpdump, DNS-over-HTTPS, VPN, event history |
 | `skill-mcp-builder` | Development | Build MCP servers (TypeScript, Zod schemas, meta-tool patterns) |
 | `skill-observability-pipeline` | DevOps | Syslog → Promtail → Loki → Grafana pipeline setup |
 | `skill-finops-gcp` | Cloud | GCP billing queries, anomaly detection, budget alerts |

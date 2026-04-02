@@ -2,6 +2,9 @@
 
 Development conventions for the Island Router MCP Server.
 
+> **Canonical CLI reference:** See `SKILL.md` at the repo root for the exhaustive command
+> reference (auto-discovered 2026-04-01, 3,136 commands across EXEC and CONFIG modes).
+
 ---
 
 ## Language & Runtime
@@ -72,6 +75,20 @@ All write tools must:
 3. **Always use `withSession()`** wrapper in tool handlers for cleanup guarantees.
 4. **Pager handling**: `runCommand()` auto-dismisses `--More--` prompts. If you add new pager strings, update `PAGER_PROMPTS` in `islandSsh.ts`.
 5. **Prompt detection**: The `PROMPT_RE` regex matches `Router#`, `Router(config)#`, etc. Update it if the hostname changes.
+6. **Rate-limiting**: The router enforces strict SSH rate-limiting after failed authentication attempts. If connections start failing with auth errors, wait 60+ seconds before retrying. Consider implementing exponential backoff in long-running scripts.
+7. **Password quoting**: Router passwords may contain special characters (`!`, `@`, `^`, `&`). In `.env` files, wrap them in single quotes. In shell exports, escape appropriately.
+
+## CLI Syntax Corrections
+
+> These corrections were verified against the live router's `?` help system on 2026-04-01.
+
+| What the docs said | What the router actually accepts |
+|---|---|
+| `syslog server <IP> <port>` | `syslog server <IP>:<port>` (colon separator) |
+| `syslog level info` | `syslog level <n>` (numeric severity, not keyword) |
+| `led level <0-3>` | `led level <0-100>` (percentage, not level) |
+| `auto-update schedule <cron>` | `auto-update days <day>...` + `auto-update time <hh:mm>` |
+| `ip dns mode manual` | `ip dns mode recursive` or `ip dns mode https <name>` or `ip dns mode dnssec` |
 
 ## Parsers
 
@@ -102,6 +119,7 @@ All write tools must:
   - `@modelcontextprotocol/sdk` — MCP protocol implementation
   - `ssh2` — SSH client
   - `zod` — schema validation
+  - `dotenv` — loads `.env` file for local development (import via `import "dotenv/config"` at top of `server.ts`)
 - Avoid adding HTTP frameworks, ORMs, or utility libraries unless strictly necessary.
 - Pin major versions in `package.json` (e.g., `^1.18.0`, not `*`).
 
@@ -110,10 +128,37 @@ All write tools must:
 | Variable | Purpose | Default |
 |---|---|---|
 | `ISLAND_DEVICE_INVENTORY` | Path to `devices.json` | `./devices.json` |
-| `ROUTER_PASS` | Fallback password (when no key auth) | — |
-| `ROUTER_HOST` | Fallback host (when no `devices.json`) | `192.168.2.1` |
+| `ROUTER_PASS` | Fallback password (when no key auth) — quote if contains `!^&@` | — |
+| `ROUTER_IP` | Fallback host (preferred alias, when no `devices.json`) | `192.168.2.1` |
+| `ROUTER_HOST` | Fallback host (legacy alias for `ROUTER_IP`) | `192.168.2.1` |
+| `ROUTER_KEY` | SSH private key content for key-based auth (no file path needed) | — |
 | `ROUTER_PORT` | Fallback port | `22` |
 | `ROUTER_USER` | Fallback username | `admin` |
 | `ISLAND_DEVICE_ID` | Fallback device ID | `island-default` |
 
+> **Note:** `ROUTER_IP` takes precedence over `ROUTER_HOST`. Either can be used, but `ROUTER_IP` is preferred.
+
 Never hardcode secrets. Never log passwords.
+
+## Extending the Command Allowlist
+
+The `ALLOWED_SHOW_COMMANDS` array in `server.ts` controls which commands the `command` action
+will execute. When adding new commands:
+
+1. Only add read-only `show` commands — never `clear`, `write`, `reload`, etc.
+2. The allowlist uses prefix matching: `"show log"` also permits `"show log kernel"`, `"show log priority warning"`, etc.
+3. Refer to the exhaustive command reference in `SKILL.md` for the complete list of available `show` subcommands.
+
+### Discovered Capabilities Not Yet Exposed as Actions
+
+The following router features were discovered during CLI exploration and may warrant new
+`QueryActions` or `ConfigureActions` in the future:
+
+| Feature | Show Command | Config Command | Notes |
+|---|---|---|---|
+| SNMP | `show snmp` | `snmp-server community/host/user` | SNMPv1/v2c/v3 |
+| Packet capture | — | `tcpdump interface <name> filter <spec>` | Live BPF capture |
+| Speed test | `show speedtest` | `speedtest interface <name>` | Run & view results |
+| DNS over HTTPS | — | `ip dns mode https cloudflare\|google\|opendns` | Encrypted DNS |
+| Event history | `show history begin <time> first json:` | — | Structured JSON output |
+| Config diff | `show running-config differences` | — | Running vs startup diff |

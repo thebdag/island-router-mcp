@@ -81,8 +81,17 @@ export async function openSession(
     hostVerifier: (_hashedKey: string) => true,
   };
 
-  if (device.authMethod === "key" && device.privateKeyPath) {
-    connectConfig.privateKey = fs.readFileSync(device.privateKeyPath);
+  if (device.authMethod === "key") {
+    const envKey = process.env["ROUTER_KEY"];
+    if (envKey) {
+      connectConfig.privateKey = envKey;
+    } else if (device.privateKeyPath) {
+      connectConfig.privateKey = fs.readFileSync(device.privateKeyPath);
+    } else {
+      throw new Error(
+        `authMethod is 'key' for device '${device.id}', but neither ROUTER_KEY env var nor privateKeyPath is set`,
+      );
+    }
   } else if (password) {
     connectConfig.password = password;
   } else {

@@ -3,7 +3,8 @@ name: island-router-cli
 description: |
   Skill for managing an Island Router via its Cisco-style SSH CLI (firmware 2.3.2).
   Covers all CLI commands, session management, DHCP reservations, DNS/syslog configuration,
-  device monitoring, VPN, and automation patterns using paramiko.
+  device monitoring, VPN, SNMP, tcpdump, and automation patterns using paramiko.
+  Exhaustive command reference auto-discovered from live router on 2026-04-01.
 ---
 
 # Island Router CLI Skill
@@ -21,8 +22,9 @@ console. Commands are context-sensitive — the prompt changes depending on cont
 - Commands can be abbreviated as long as they are unambiguous (e.g., `sh ip ne` = `show ip neighbors`).
 
 **Environment variables (required):**
-- `ROUTER_HOST` — defaults to `192.168.2.1`
-- `ROUTER_PASS` — admin password (never hardcode)
+- `ROUTER_IP` — defaults to `192.168.2.1` (also accepts `ROUTER_HOST`)
+- `ROUTER_PASS` — admin password (never hardcode; quote if it contains special chars like `&`, `!`, `^`)
+- `ROUTER_KEY` — (optional) SSH private key content for key-based auth
 
 **Access:**
 - User: `admin` (full access) or `user` (read-only show commands)
@@ -62,26 +64,25 @@ end                         # Return to privileged EXEC from any config context
 
 ---
 
-## Command Reference
+## Exhaustive Command Reference
+
+> **Note:** This reference was auto-discovered from the live router CLI help system (`?`) on 2026-04-01.
+> Both EXEC and CONFIG modes share the same command set on this firmware.
 
 ### Session / Navigation
 
 | Command                         | Context | Description                                   |
 | ------------------------------- | ------- | --------------------------------------------- |
 | `help`                          | Any     | Display help information                      |
-| `?`                             | Any     | Context-sensitive help (list commands/params) |
+| `?`                             | Any     | Context-sensitive help (list commands/params)  |
 | `exit`                          | Any     | Exit current mode / logout                    |
 | `end`                           | Config  | Return to privileged EXEC                     |
 | `history`                       | Any     | Manage command history                        |
-| `show history`                  | EXEC    | Display command history for current session   |
 | `terminal length <0-512>`       | EXEC    | Set lines per page (0 = disable pager)        |
 | `terminal width <0-512>`        | EXEC    | Set terminal column width                     |
 | `terminal terminal-type <type>` | EXEC    | Set terminal type (e.g., `vt100`)             |
 
-**Important for automation:** Set `terminal length 0` at session start to disable the pager:
-```
-terminal length 0
-```
+**Important for automation:** Set `terminal length 0` at session start to disable the pager.
 
 ---
 
@@ -101,27 +102,31 @@ terminal length 0
 | Command                      | Context         | Description                                             |
 | ---------------------------- | --------------- | ------------------------------------------------------- |
 | `hostname <name>`            | Config          | Set router hostname                                     |
-| `password <old> <new>`       | EXEC            | Change current user's password                          |
-| `reload`                     | Privileged EXEC | Reboot the router (⚠️ requires confirmation)             |
+| `description <text>`         | Config          | Set interface description                               |
+| `password admin [<password>]`| Config          | Set admin password                                      |
+| `password user [<password>]` | Config          | Set read-only user password                             |
+| `reload`                     | Privileged EXEC | Reboot the router (⚠️ requires confirmation)            |
 | `rollback`                   | Privileged EXEC | Roll back to the previous saved configuration           |
 | `compact`                    | Privileged EXEC | Compact (defragment) the router's flash storage         |
-| `led level <0-3>`            | Config          | Set LED brightness level (0=off, 3=brightest)           |
-| `mac output-format <format>` | Config          | Set MAC address display format (`colon`, `dot`, `dash`) |
+| `led level <0-100>`          | Config          | Set LED brightness percentage                           |
+| `mac output-format <format>` | Config          | Set MAC address display format template                 |
 | `login confirm`              | Config          | Require confirmation before login                       |
 | `login console`              | Config          | Configure console login settings                        |
 | `login remote`               | Config          | Configure remote (SSH) login settings                   |
 | `login support`              | Config          | Enable/disable Island support access                    |
 | `show version`               | EXEC            | Show firmware version and system info                   |
+| `show version history`       | EXEC            | Show version update history                             |
 | `show hardware`              | EXEC            | Show hardware details (model, serial, etc.)             |
 | `show clock`                 | EXEC            | Display the current date and time                       |
 | `show users`                 | EXEC            | Show currently logged-in users                          |
 | `show free-space`            | EXEC            | Show available flash storage space                      |
 | `show public-key`            | EXEC            | Display this router's public SSH key                    |
 | `show running-config`        | EXEC            | Show the current (unsaved) running configuration        |
+| `show running-config differences` | EXEC       | Show differences from startup config                    |
 | `show startup-config`        | EXEC            | Show the saved (startup) configuration                  |
-| `show history`               | EXEC            | Display command history                                 |
 | `show dumps`                 | EXEC            | List stored crash dumps                                 |
 | `show packages`              | EXEC            | Show installed software packages                        |
+| `show packages detail`       | EXEC            | Show detailed package information                       |
 
 ---
 
@@ -141,88 +146,385 @@ terminal length 0
 
 ### Interface Configuration
 
-| Command                       | Context          | Description                                               |
-| ----------------------------- | ---------------- | --------------------------------------------------------- |
-| `interface <name>`            | Config           | Enter interface config mode (e.g., `interface ethernet1`) |
-| `description <text>`          | Interface Config | Set a description for the interface                       |
-| `duplex <auto                 | full             | half>`                                                    | Interface Config | Set duplex mode for an ethernet interface |
-| `speed <auto                  | 10               | 100                                                       | 1000>`           | Interface Config                          | Set link speed for an ethernet interface |
-| `parent <interface>`          | Interface Config | Set parent interface (for logical sub-interfaces)         |
-| `ethernet polling`            | Interface Config | Configure ethernet polling behavior                       |
-| `show interface`              | EXEC             | Show detailed interface status and counters               |
-| `show interface summary`      | EXEC             | Show a summary table of all interfaces                    |
-| `show interface transceivers` | EXEC             | Show SFP/transceiver module information                   |
-
-**IP (Interface Context)** — configured after `interface <name>`:
-
-| Command                            | Description                                       |
-| ---------------------------------- | ------------------------------------------------- |
-| `ip address <addr> <mask>`         | Set a static IP on this interface                 |
-| `ip address dhcp`                  | Configure interface to get IP via DHCP            |
-| `ip nat outside` / `ip nat inside` | Mark interface as NAT outside/inside              |
-| `ip mtu <size>`                    | Set the MTU for this interface                    |
-| `ip router-solicit`                | Enable IPv6 router solicitation on this interface |
-| `ip ipv6 address <addr/prefix>`    | Set a static IPv6 address on this interface       |
-| `show ip interface`                | Show IP configuration per interface               |
+| Command                                | Context          | Description                                               |
+| -------------------------------------- | ---------------- | --------------------------------------------------------- |
+| `interface <name>`                     | Config           | Enter interface config mode (e.g., `interface ethernet1`) |
+| `description <text>`                   | Interface Config | Set a description for the interface                       |
+| `duplex <auto|full|half>`              | Interface Config | Set duplex mode for an ethernet interface                 |
+| `speed <auto|10|100|1000>`             | Interface Config | Set link speed for an ethernet interface                  |
+| `parent <interface>`                   | Interface Config | Set parent interface (for logical sub-interfaces/VLANs)   |
+| `move <iface>`                         | Interface Config | Move interface configuration to another interface         |
+| `swap <iface>`                         | Interface Config | Swap configurations between two interfaces                |
+| `ethernet polling auto`                | Interface Config | Enable automatic ethernet polling                         |
+| `ethernet polling <1-n>`              | Interface Config | Set number of cores for polled mode                       |
+| `disable network`                      | Config           | Shut down all packet processing                           |
+| `show interface`                       | EXEC             | Show detailed interface status and counters               |
+| `show interface enX`                   | EXEC             | Show detail for specific interface (replace X)            |
+| `show interface summary`               | EXEC             | Show a summary table of all interfaces                    |
+| `show interface transceivers`          | EXEC             | Show SFP/transceiver module information                   |
+| `show interface transceivers diagnostics` | EXEC          | Show digital diagnostic monitoring details                |
 
 ---
 
-### Network / IP (Global Context)
+### IP Configuration
 
-These commands configure network-wide parameters from `configure terminal`:
+**IP (Interface/Global Context)** — configured after `interface <name>` or from `configure terminal`:
 
-| Command                                                  | Description                                                        |
-| -------------------------------------------------------- | ------------------------------------------------------------------ |
-| `ip dhcp-reserve <mac> <ip> [<hostname>]`                | **Create a DHCP reservation** — pin a MAC address to a specific IP |
-| `no ip dhcp-reserve <mac>`                               | Remove a DHCP reservation                                          |
-| `ip dns mode <mode>`                                     | Set DNS mode (`auto`, `manual`, `dhcp`)                            |
-| `ip dns local-only`                                      | Enable local-only DNS mode (no forwarding)                         |
-| `no ip dns local-only`                                   | Disable local-only DNS mode                                        |
-| `ip firewall <on                                         | off>`                                                              | Enable or disable the built-in firewall |
-| `ip ipv6 <on                                             | off>`                                                              | Enable or disable IPv6 globally         |
-| `ip load-sharing`                                        | Configure load-sharing across multiple WAN connections             |
-| `ip max-clients <n>`                                     | Set maximum DHCP clients                                           |
-| `ip port-forward <proto> <ext-port> <int-ip> <int-port>` | Add a port-forwarding rule                                         |
-| `no ip port-forward <proto> <ext-port>`                  | Remove a port-forwarding rule                                      |
-| `ip route <dest> <mask> <gateway>`                       | Add a static route                                                 |
-| `no ip route <dest> <mask>`                              | Remove a static route                                              |
-| `ip ddns name <hostname>`                                | Configure Dynamic DNS hostname                                     |
-| `ip ddns ipv6 <on                                        | off>`                                                              | Enable/disable IPv6 for DDNS            |
+| Command                                                     | Description                                                      |
+| ----------------------------------------------------------- | ---------------------------------------------------------------- |
+| `ip address <addr>[/<n>]`                                   | Set a static IP on this interface                                |
+| `ip autoconfig <mode>`                                      | Set automatic IP configuration mode                              |
+| `ip autovlan on|off`                                       | Enable/disable automatic VLAN discovery                          |
+| `ip arp-scan on|off`                                       | Enable/disable ARP scanning                                      |
+| `ip dhcp-client on|off`                                    | Enable/disable DHCP client                                       |
+| `ip dhcp-server on|off`                                    | Enable/disable DHCP server                                       |
+| `ip dhcp6-client on|off`                                   | Enable/disable DHCPv6 client                                     |
+| `ip dhcp6-server on|off`                                   | Enable/disable DHCPv6 server                                     |
+| `ip dhcp-lease <seconds>`                                   | Set DHCP lease time                                              |
+| `ip dhcp-monitor on|off`                                   | Enable/disable DHCP monitor                                      |
+| `ip dhcp-option-43 <class> <subtype> <value-type> <value>` | Configure DHCP vendor option 43                                  |
+| `ip dhcp-reserve <ip> <mac>`                                | **Create a DHCP reservation** — pin a MAC to a specific IP      |
+| `ip dhcp-scope [<low>]-[<high>]`                            | Set DHCP scope IP range                                          |
+| `ip dns local-only on|off`                                 | Respond only to local IP addresses                               |
+| `ip dns mode dnssec`                                        | Recursive resolution with DNSSEC verification                    |
+| `ip dns mode https <name|url>`                              | DNS over HTTPS (e.g., cloudflare, google, opendns, or custom)    |
+| `ip dns mode recursive`                                     | Recursive resolution without DNSSEC                              |
+| `ip dns redirect <domain> <server>`                         | Redirect domain queries to a specific server                     |
+| `ip ddns name <name>`                                       | Set DDNS hostname                                                |
+| `ip ddns ipv6 on|off`                                      | Enable/disable IPv6 for DDNS                                     |
+| `ip firewall on|off`                                       | Enable/disable single-port firewall                              |
+| `ip ident4 on|off`                                         | Enable/disable IPv4 device identification                        |
+| `ip ident6 on|off`                                         | Enable/disable IPv6 device identification                        |
+| `ip idle <n>`                                               | Set idle time before purging an IP                               |
+| `ip ipv6 on|off`                                           | Enable/disable global IPv6 support                               |
+| `ip load-sharing dst-ip`                                    | Equal-cost path: use only destination IP                         |
+| `ip load-sharing random`                                    | Equal-cost path: random selection                                |
+| `ip load-sharing src-dst-ip`                                | Equal-cost path: use source and destination IP                   |
+| `ip max-clients <n>`                                        | Set maximum allowed IPs                                          |
+| `ip mtu <n>`                                                | Set Maximum Transmit Unit                                        |
+| `ip nat4 on|off`                                           | Enable/disable IPv4 NAT                                          |
+| `ip nat6 on|off`                                           | Enable/disable IPv6 NAT                                          |
+| `ip port-forward tcp|tcp+udp|udp [<pub-ip>:]<port> <mac|ip|island> [<port>]` | Add D-NAT port forward rule   |
+| `ip prefix-delegation on|off`                              | Enable/disable IPv6 Prefix Delegation                            |
+| `ip priority <1-4>`                                         | Set interface priority                                           |
+| `ip rip-announce on|off`                                   | Enable/disable RIP announcement                                  |
+| `ip route <addr>/n <gw>`                                    | Install a static route                                           |
+| `ip router-advertise on|off`                               | Enable/disable IPv6 router advertisement                         |
+| `ip router-solicit on|off`                                 | Enable/disable IPv6 router solicitation                          |
 
 **Show commands for IP:**
 
-| Command                     | Description                                                          |
-| --------------------------- | -------------------------------------------------------------------- |
-| `show ip dhcp-reservations` | **List all DHCP static reservations** (MAC → IP mappings)            |
-| `show ip interface`         | Show IP address information for each interface                       |
-| `show ip neighbors`         | **Show ARP/neighbor table** — lists devices by IP and MAC with state |
-| `show ip routes`            | Show the routing table                                               |
-| `show ip sockets`           | **Show active local IP sockets** (open connections/listeners)        |
-| `show ip recommendations`   | Show IP configuration recommendations                                |
+| Command                                 | Description                                                          |
+| --------------------------------------- | -------------------------------------------------------------------- |
+| `show ip dhcp-reservations`             | **List all DHCP static reservations** (MAC → IP mappings)            |
+| `show ip dhcp-reservations csv`         | List DHCP reservations in CSV format                                 |
+| `show ip interface`                     | Show IP address information for each interface                       |
+| `show ip interface <iface>`             | Show IP info for a specific interface                                |
+| `show ip neighbors`                     | **Show ARP/neighbor table** — lists devices by IP and MAC with state |
+| `show ip routes`                        | Show the routing table                                               |
+| `show ip sockets`                       | **Show active local IP sockets** (open connections/listeners)        |
+| `show ip recommendations`              | Show IP auto-configuration suggestions                               |
+| `show ip recommendations no-disabled`  | Suggestions excluding disabled interfaces                            |
+| `show ip recommendations enX`          | Suggestions for a specific interface                                 |
 
 ---
 
-### DNS / Ad Blocking
+### DNS Configuration
 
-The router supports DNS mode configuration. For ad blocking via DNS sinkhole:
+| Command                                   | Description                                              |
+| ----------------------------------------- | -------------------------------------------------------- |
+| `ip dns mode dnssec`                      | Recursive resolution with DNSSEC verification            |
+| `ip dns mode https <name|url>`            | DNS over HTTPS (cloudflare, google, opendns, custom URL) |
+| `ip dns mode recursive`                   | Recursive resolution without DNSSEC                      |
+| `ip dns local-only on|off`               | Respond only to local IP addresses                       |
+| `ip dns redirect <domain> <server>`       | Redirect domain queries to specific server               |
+| `no ip dns redirect`                      | Remove DNS redirect                                      |
 
+**DNS over HTTPS providers (discovered):**
 ```
-# Point DNS resolver to a local Pi-hole / AdGuard Home
+ip dns mode https cloudflare     # CloudFlare DoH
+ip dns mode https google         # Google DoH
+ip dns mode https opendns        # OpenDNS DoH
+ip dns mode https <url>          # Custom DoH endpoint
+```
+
+---
+
+### Syslog / Logging
+
+| Command                         | Context         | Description                                                          |
+| ------------------------------- | --------------- | -------------------------------------------------------------------- |
+| `syslog server <IP>[:<port>]`   | Config          | Set the remote syslog server IP (and optional port)                  |
+| `no syslog server`              | Config          | Remove the external syslog server                                    |
+| `syslog level <n>`              | Config          | Set minimum severity to forward (7=debug through 0=emergency)        |
+| `syslog protocol tcp|udp`       | Config          | Set transport protocol for syslog (default: UDP)                     |
+| `show syslog`                   | EXEC            | Display the syslog configuration                                     |
+| `show log`                      | EXEC            | View local activity log entries                                      |
+| `show log all`                  | EXEC            | Use all of buffer                                                    |
+| `show log clear`                | EXEC            | Clear buffer after output                                            |
+| `show log end`                  | EXEC            | Start at end of buffer & wait                                        |
+| `show log kernel`               | EXEC            | Show only kernel log entries                                         |
+| `show log last`                 | EXEC            | Use last portion of buffer                                           |
+| `show log module <name>`        | EXEC            | Show entries from specific module                                    |
+| `show log priority <level>`     | EXEC            | Show entries equal or above severity level                           |
+| `show log utc`                  | EXEC            | Show times in UTC                                                    |
+| `show log wait`                 | EXEC            | Wait for new records (tail mode)                                     |
+| `show log where <string>`       | EXEC            | Filter log entries by condition                                      |
+| `clear syslog <file>`           | EXEC            | Remove system log file                                               |
+| `clear log`                     | EXEC            | Clear the activity log                                               |
+| `write syslog <url>`            | Privileged EXEC | Export syslog to a remote file URL                                   |
+
+**Log command modifiers** can be combined. For example:
+```
+show log all utc where "error"    # Show all log entries in UTC filtered by "error"
+show log last priority warning    # Show recent entries at warning level or above
+show log kernel wait              # Wait for new kernel log entries
+```
+
+**Example — forward logs to Raspberry Pi running rsyslog/Loki:**
+```
 configure terminal
-  ip dns mode manual
-  # Set upstream DNS to local sinkhole (typically via port-forward or router config)
-  ip dns local-only         # optional: prevent DNS leaks
+  syslog server 192.168.2.50
+  syslog level info
+  syslog protocol udp
 end
 write memory
 ```
 
-> **Note:** The Island Router does not have a native hosts-file or DNS block-list feature. The recommended approach is to set a local sinkhole (e.g., Pi-hole at 192.168.2.x) as the DNS server via the DHCP or DNS settings, or point `ip dns` to a custom resolver.
+---
+
+### Event History
+
+The router maintains structured event history that can be queried with extensive format specifiers.
+
+| Command                              | Description                                          |
+| ------------------------------------ | ---------------------------------------------------- |
+| `show history`                       | Display event history                                |
+| `show history begin <time>`          | Earliest time to show (e.g., `1d`, `2h`, `30m`)     |
+| `show history end <time>`            | Latest time to show                                  |
+| `show history counts`                | Show record counts                                   |
+| `show history first <template>`      | Show only first occurrence per template              |
+| `show history format <template>`     | Set output format template                           |
+| `show history ignore`                | Ignore output restrictions                           |
+| `show history unadjusted`            | Output unadjusted times                              |
+| `show history wait`                  | Wait for new records (tail mode)                     |
+| `show history where <test>`          | Filter by condition                                  |
+
+**Time range formats:**
+```
+show history begin 1d     # last 24 hours
+show history begin 2h     # last 2 hours
+show history begin 30m    # last 30 minutes
+show history begin 1w     # last week
+show history begin 1Y     # last year
+```
+
+**Format specifiers** (use with `show history first <specifier>` or `show history format`):
+
+| Specifier     | Description                          |
+| ------------- | ------------------------------------ |
+| `%d[(<fmt>)]` | Date/time (default %Y/%m/%d %T)     |
+| `%D`          | ISO 8601 date/time                   |
+| `%h`          | Host name                            |
+| `%i`          | Subscriber IP address                |
+| `%m`          | MAC address                          |
+| `%s`          | Subscriber name                      |
+| `%E`          | Subscriber description               |
+| `%t`          | Event type                           |
+| `%c`          | Category number                      |
+| `%g`          | Group number                         |
+| `%u`          | Rule number                          |
+| `%p`          | Policy number                        |
+| `%n`          | Delivery count                       |
+| `%f`          | Event flags                          |
+| `%b`          | Button name                          |
+| `%w`          | Waited time (seconds)                |
+| `%j`          | Time offset from past                |
+| `%R`          | Constant random number               |
+| `%xr`         | Bytes received                       |
+| `%xt`         | Bytes transmitted                    |
+| `%ys`         | Subscriber IP & port                 |
+| `%yd`         | Destination IP & port                |
+| `%ri`         | Source IP                            |
+| `%rn`         | Source name                          |
+| `%rt`         | Source type                          |
+| `%rq`         | Source qualifier                     |
+| `%ah`         | Audit host name                      |
+| `%asp`        | Audit source port                    |
+| `%adi`        | Audit destination IP                 |
+| `%adp`        | Audit destination port               |
+| `%am`         | Audit method                         |
+| `%ap`         | Audit path                           |
+| `%av`         | Audit version                        |
+| `%Mh`         | Host category map                    |
+| `%Ma`         | Allowed category map                 |
+| `%Md`         | Denied category map                  |
+| `%F<x>`       | Boolean output of flag `<x>`        |
+| `all`         | All attributes (tag=value)           |
+| `json:`       | Output as JSON                       |
+| `avro:`       | Output as Avro                       |
+| `csv`         | Output as CSV                        |
+| `syslog`      | Structured syslog format             |
+| `usyslog`     | Unstructured syslog                  |
+| `raw`         | Raw binary                           |
+| `speedtest`   | Speed test results                   |
+| `audit`       | AuditSentry format                   |
+
+---
+
+### NTP / Time
+
+| Command                  | Context | Description                                                 |
+| ------------------------ | ------- | ----------------------------------------------------------- |
+| `ntp <address>...`       | Config  | Set NTP server address(es)                                  |
+| `no ntp`                 | Config  | Remove NTP server                                           |
+| `timezone <country|spec>`| Config  | Set timezone (2-letter country code or timezone name)       |
+| `show ntp`               | EXEC    | Display NTP configuration                                   |
+| `show ntp associations`  | EXEC    | Show NTP peer associations                                  |
+| `show ntp status`        | EXEC    | Show NTP synchronization status                             |
+| `show clock`             | EXEC    | Display current system time                                 |
+
+---
+
+### Statistics & Monitoring
+
+| Command                              | Description                                                     |
+| ------------------------------------ | --------------------------------------------------------------- |
+| `show stats`                         | Show hardware/packet summary                                    |
+| `show stats <component>`             | Show component-specific diagnostics (use `show stats ?`)        |
+| `show ip sockets`                    | List active local IP sockets (TCP/UDP)                          |
+| `show ip neighbors`                  | ARP neighbor table — IP, MAC, interface, and state              |
+| `show ip routes`                     | Current routing table                                           |
+| `show interface`                     | Detailed per-interface stats including TX/RX bytes, errors      |
+| `show interface summary`             | Brief table of all interface states                             |
+| `show hardware`                      | Hardware info (model, serial number, temps)                     |
+| `show version`                       | Firmware version string                                         |
+| `ping <ip|hostname>`                 | Send ICMP ping from the router                                  |
+| `traceroute <host>`                  | Trace route to host                                             |
+| `telnet <ip> [<port>]`              | Open a telnet connection from the router                        |
+| `ssh [<user>@]<host>`               | Open an SSH connection from the router                          |
+
+---
+
+### Speed Test
+
+| Command                              | Description                                          |
+| ------------------------------------ | ---------------------------------------------------- |
+| `speedtest`                          | Run a speed test                                     |
+| `speedtest comment <text>`           | Add a comment to speed test history                  |
+| `speedtest history`                  | Include results in history                           |
+| `speedtest interface <name>`         | Run speed test on specific interface                 |
+| `speedtest wait`                     | Wait for prior run to finish                         |
+| `show speedtest`                     | Show speed test history                              |
+| `show speedtest begin <time>`        | Show history from a specific time                    |
+| `show speedtest counts`              | Show record counts                                   |
+| `show speedtest first <template>`    | Show first occurrence per template                   |
+
+Speed test history supports the same format specifiers as `show history`.
+
+---
+
+### Backup / Restore / Updates
+
+| Command                           | Context         | Description                                      |
+| --------------------------------- | --------------- | ------------------------------------------------ |
+| `backup url <URL>`                | Config          | Set automatic backup upload URL                  |
+| `backup days <days>`              | Config          | Set days of history to include in backup         |
+| `backup interval <secs>`          | Config          | Set backup interval in seconds                   |
+| `auto-update days <day>...`       | Config          | Set days for automatic updates                   |
+| `auto-update time <hh:mm>`        | Config          | Set time for automatic updates                   |
+| `show packages`                   | EXEC            | Show installed packages and versions             |
+| `show packages detail`            | EXEC            | Show detailed package information                |
+| `update`                          | Privileged EXEC | Trigger a firmware update                        |
+| `clear update`                    | Privileged EXEC | Clear pending update state                       |
+| `rollback`                        | Privileged EXEC | Roll back to previous firmware/config            |
+
+**Auto-update day values:** `all`, `none`, `sunday`, `monday`, `tuesday`, `wednesday`, `thursday`, `friday`, `saturday`. Multiple days are specified positionally.
+
+---
+
+### VPN (WireGuard)
+
+| Command                                  | Context         | Description                               |
+| ---------------------------------------- | --------------- | ----------------------------------------- |
+| `vpn key-exchange <host> <secret>`       | Config          | Exchange public keys with peer             |
+| `vpn peer <n|auto> ...`                  | Config          | Define/configure a VPN peer                |
+| `vpn port <n>`                           | Config          | Set WireGuard UDP port number              |
+| `vpn renumber`                           | Config          | Renumber pool assignments                  |
+| `vpn route <addr/bits>`                  | Config          | Specify manual VPN route                   |
+| `vpn sort`                               | Config          | Sort peers by name                         |
+| `vpn server auto-trust on|off`           | Config          | Auto-trust new VPN peers                   |
+| `vpn server auto-visible on|off`         | Config          | Make VPN server auto-visible               |
+| `vpn server force-nat on|off`            | Config          | Force NAT for VPN traffic                  |
+| `vpn server no-local`                    | Config          | Disable local network access via VPN       |
+| `vpn server pool`                        | Config          | Configure VPN address pool                 |
+| `vpn server secret <secret>`             | Config          | Set VPN server shared secret               |
+| `show vpns`                              | EXEC            | Show VPN status and peer list              |
+| `show vpns <iface|mac>`                  | EXEC            | Show VPN status for specific peer          |
+| `clear vpn-keys`                         | Privileged EXEC | Clear all VPN keys                         |
+
+---
+
+### SNMP
+
+| Command                                                          | Context | Description                          |
+| ---------------------------------------------------------------- | ------- | ------------------------------------ |
+| `snmp-server community <name>`                                   | Config  | Define SNMP community name           |
+| `snmp-server contact <string>`                                   | Config  | Set system contact string            |
+| `snmp-server location <string>`                                  | Config  | Set system location string           |
+| `snmp-server engineID <hex>`                                     | Config  | Set SNMPv3 engine ID                 |
+| `snmp-server host <host> v1|v2c|v3 ...`                         | Config  | Configure trap host                  |
+| `snmp-server user <name> [MD5|SHA <auth> [AES|DES [<priv>]]]`   | Config  | Configure SNMPv3 user                |
+| `snmp-server notifications all`                                  | Config  | Enable all notification types        |
+| `snmp-server notifications cpuUtilization <threshold>`           | Config  | CPU utilization notifications        |
+| `snmp-server notifications ipLimitExceeded <threshold>`          | Config  | IP limit exceeded notifications      |
+| `snmp-server notifications linkUpDown`                           | Config  | Link up/down notifications           |
+| `snmp-server notifications psu`                                  | Config  | Power supply notifications           |
+| `no snmp-server`                                                 | Config  | Remove SNMP configuration            |
+
+---
+
+### Packet Capture (tcpdump)
+
+| Command                    | Context     | Description                          |
+| -------------------------- | ----------- | ------------------------------------ |
+| `tcpdump`                  | EXEC        | Start packet capture                 |
+| `tcpdump count <n>`        | EXEC        | Stop after `<n>` packets             |
+| `tcpdump filter <spec>`    | EXEC        | Apply BPF filter specification       |
+| `tcpdump hex`              | EXEC        | Include hex dump in output           |
+| `tcpdump interface <name>` | EXEC        | Capture on specific interface        |
+| `tcpdump pager`            | EXEC        | Use pager for output                 |
+| `tcpdump read <file>`      | EXEC        | Read from capture file               |
+| `tcpdump verbose`          | EXEC        | Increase capture verbosity           |
+| `tcpdump write <file>`     | EXEC        | Write capture to file                |
+
+**Example:**
+```
+tcpdump interface ethernet1 count 100 filter "port 53"
+```
+
+---
+
+### SSH & Security
+
+| Command                           | Context         | Description                         |
+| --------------------------------- | --------------- | ----------------------------------- |
+| `show config authorized-keys`     | EXEC            | Show configured SSH authorized keys |
+| `show config authorized-keys admin` | EXEC          | Show admin user's authorized keys   |
+| `show config authorized-keys user`  | EXEC          | Show read-only user's authorized keys |
+| `show config email`               | EXEC            | Show email notification addresses   |
+| `show config known-hosts`         | EXEC            | Show SSH known hosts                |
+| `show ssh-client-keys`            | EXEC            | Show SSH client key pairs           |
+| `show ssh-client-keys detail`     | EXEC            | Show detailed SSH client keys       |
+| `configure authorized-keys <url>` | Privileged EXEC | Load authorized_keys from a URL     |
+| `configure known-hosts <url>`     | Privileged EXEC | Load known_hosts from a URL         |
+| `clear ssh`                       | Privileged EXEC | Clear SSH objects                   |
 
 ---
 
 ### DHCP Reservations
 
-DHCP reservations permanently bind a MAC address to an IP address, making devices identifiable:
+DHCP reservations permanently bind a MAC address to an IP address:
 
 ```
 # Enter config mode
@@ -243,117 +545,8 @@ write memory
 ```
 # View all reservations
 show ip dhcp-reservations
+show ip dhcp-reservations csv    # CSV format for parsing
 ```
-
----
-
-### Syslog / Logging
-
-The `syslog` command group configures forwarding to an external syslog server:
-
-| Command                       | Context         | Description                                                                                 |
-| ----------------------------- | --------------- | ------------------------------------------------------------------------------------------- |
-| `syslog server <ip> [<port>]` | Config          | Set the remote syslog server IP (and optional port)                                         |
-| `no syslog server`            | Config          | Remove the external syslog server                                                           |
-| `syslog level <level>`        | Config          | Set minimum severity to forward (`debug`, `info`, `notice`, `warning`, `error`, `critical`) |
-| `syslog protocol <udp         | tcp>`           | Config                                                                                      | Set transport protocol for syslog (default: UDP) |
-| `show syslog`                 | EXEC            | Display the syslog configuration                                                            |
-| `show log`                    | EXEC            | View local log entries                                                                      |
-| `clear syslog`                | EXEC            | Clear the in-memory syslog buffer                                                           |
-| `write syslog <url>`          | Privileged EXEC | Export syslog to a remote file URL                                                          |
-
-**Example — forward logs to Raspberry Pi running rsyslog/Loki:**
-```
-configure terminal
-  syslog server 192.168.2.50
-  syslog level info
-  syslog protocol udp
-end
-write memory
-```
-
----
-
-### NTP / Time
-
-| Command         | Context    | Description                                    |
-| --------------- | ---------- | ---------------------------------------------- |
-| `ntp server <ip | hostname>` | Config                                         | Set NTP server |
-| `no ntp server` | Config     | Remove NTP server                              |
-| `timezone <tz>` | Config     | Set system timezone (e.g., `America/New_York`) |
-| `show ntp`      | EXEC       | Display NTP status and configuration           |
-| `show clock`    | EXEC       | Display current system time                    |
-
----
-
-### Statistics & Monitoring
-
-| Command                  | Description                                                      |
-| ------------------------ | ---------------------------------------------------------------- |
-| `show stats`             | Show a hardware/packet summary (default, no args)                |
-| `show stats <component>` | Show component-specific diagnostics (use `show stats ?` to list) |
-| `show ip sockets`        | List active local IP sockets (TCP/UDP listeners and connections) |
-| `show ip neighbors`      | ARP neighbor table — IP, MAC, interface, and state               |
-| `show ip routes`         | Show current routing table                                       |
-| `show interface`         | Detailed per-interface stats including TX/RX bytes, errors       |
-| `show interface summary` | Brief table of all interface states                              |
-| `show hardware`          | Hardware info (model, serial number, temps)                      |
-| `show version`           | Firmware version string                                          |
-| `ping <ip                | hostname>`                                                       | Send ICMP ping from the router |
-| `telnet <ip> [<port>]`   | Open a telnet connection from the router                         |
-| `ssh <user>@<host>`      | Open an SSH connection from the router                           |
-
-> **For data usage reporting:** `show ip sockets` and `show interface` are the primary sources. Parse TX/RX byte counters per-interface and correlate with `show ip neighbors` for per-device attribution.
-
----
-
-### Backup / Restore
-
-| Command                       | Context         | Description                                      |
-| ----------------------------- | --------------- | ------------------------------------------------ |
-| `backup <url>`                | Privileged EXEC | Backup full router configuration to a remote URL |
-| `backup restore <url>`        | Privileged EXEC | Restore a configuration from a remote URL        |
-| `auto-update check`           | Privileged EXEC | Check for available firmware updates             |
-| `auto-update enable`          | Config          | Enable automatic updates                         |
-| `auto-update disable`         | Config          | Disable automatic updates                        |
-| `auto-update schedule <cron>` | Config          | Set auto-update schedule (cron-like syntax)      |
-| `show packages`               | EXEC            | Show installed packages and versions             |
-| `update`                      | Privileged EXEC | Trigger a firmware update                        |
-| `clear update`                | Privileged EXEC | Clear pending update state                       |
-| `rollback`                    | Privileged EXEC | Roll back to previous firmware/config            |
-
----
-
-### VPN
-
-| Command                      | Context         | Description                               |
-| ---------------------------- | --------------- | ----------------------------------------- |
-| `vpn key-exchange <type>`    | Config          | Set VPN key exchange type (e.g., `ikev2`) |
-| `vpn peer <name>`            | Config          | Define a VPN peer                         |
-| `vpn port <port>`            | Config          | Set VPN UDP port                          |
-| `vpn renumber`               | Config          | Renumber VPN peer indices                 |
-| `vpn route <peer> <network>` | Config          | Add a route via a VPN peer                |
-| `vpn server`                 | Config          | Configure VPN server settings             |
-| `vpn sort`                   | Config          | Sort VPN peer list                        |
-| `show vpns`                  | EXEC            | Show VPN status and peer list             |
-| `clear vpn-keys`             | Privileged EXEC | Clear all VPN keys                        |
-
----
-
-### SSH & Security
-
-| Command                           | Context         | Description                         |
-| --------------------------------- | --------------- | ----------------------------------- |
-| `show config authorized-keys`     | EXEC            | Show configured SSH authorized keys |
-| `show config known-hosts`         | EXEC            | Show SSH known hosts                |
-| `show ssh-client-keys`            | EXEC            | Show SSH client key pairs           |
-| `configure authorized-keys <url>` | Privileged EXEC | Load authorized_keys from a URL     |
-| `configure known-hosts <url>`     | Privileged EXEC | Load known_hosts from a URL         |
-| `clear ssh client-keys`           | Privileged EXEC | Clear SSH client key cache          |
-| `clear ssh host-keys`             | Privileged EXEC | Clear SSH host keys                 |
-| `clear ssh known-hosts`           | Privileged EXEC | Clear SSH known hosts list          |
-
-**Password encryption:** The router stores passwords in an encrypted form in the config. Use `password <oldpass> <newpass>` to change — never store plaintext in scripts; use environment variables.
 
 ---
 
@@ -361,15 +554,15 @@ write memory
 
 | Command              | Context         | Description                      |
 | -------------------- | --------------- | -------------------------------- |
-| `packet level <0-5>` | Config/EXEC     | Set packet capture/debug level   |
+| `packet level <n>`   | Config/EXEC     | Set packet processing verbosity  |
 | `show dumps`         | EXEC            | List stored crash dumps          |
 | `write dump <url>`   | Privileged EXEC | Export crash dumps to remote URL |
 
 ---
 
-### Dangerous / Destructive Commands
+### Clear (Reset) Commands
 
-> ⚠️ These commands require explicit user confirmation before execution.
+> ⚠️ Some of these commands are destructive and require confirmation.
 
 | Command             | Description                                          |
 | ------------------- | ---------------------------------------------------- |
@@ -378,34 +571,37 @@ write memory
 | `clear connections` | Drop all active connections                          |
 | `clear log`         | Clear the local event log                            |
 | `clear dhcp-client` | Release and clear DHCP client state                  |
-| `clear dump`        | Delete stored crash dumps                            |
-| `clear package`     | Clear package cache                                  |
-| `clear pin`         | Clear stored PIN                                     |
-| `reload`            | Reboot the router                                    |
+| `clear dump`        | Delete stored crash dumps (or `<file>` for specific) |
+| `clear package`     | Clear package cache (or `<name>` for specific)       |
+| `clear pin`         | Remove the access PIN                                |
+| `clear ssh`         | Clear SSH objects                                    |
+| `clear syslog`      | Remove system log file                               |
+| `clear update`      | Clear pending update state                           |
+| `clear vpn-keys`    | Clear all VPN keys                                   |
 
 ---
 
-### Misc Configuration Commands
+### Negation (`no`) Command
 
-| Command                  | Context         | Description                |
-| ------------------------ | --------------- | -------------------------- |
-| `package install <name>` | Config          | Install a software package |
-| `package remove <name>`  | Config          | Remove a software package  |
-| `clear package`          | Privileged EXEC | Clear package cache        |
+The `no` prefix removes or disables a configuration:
+```
+no ip dhcp-reserve <mac>          # Remove a DHCP reservation
+no ip port-forward <proto> <port> # Remove a port-forward rule
+no ip route <dest> <mask>         # Remove a static route
+no ip dns local-only              # Disable local-only DNS
+no syslog server                  # Remove syslog server
+no ntp                            # Remove NTP server
+no snmp-server                    # Remove SNMP configuration
+```
 
 ---
 
-## Command Scheduler
+### Miscellaneous
 
-The router supports scheduled commands using a cron-like syntax. Schedules are calculated based on wall-clock time at the time of arm, with intervals applied from that moment.
-
-From configuration mode:
-```
-# Example: auto-update on a schedule
-auto-update schedule 0 3 * * *   # run at 3am daily
-```
-
-Intervals are relative to when the scheduler arms — e.g., if you set `every 1 hour` at 1:30pm, it fires at 2:30pm, 3:30pm, etc.
+| Command                          | Context | Description                           |
+| -------------------------------- | ------- | ------------------------------------- |
+| `package <name> <tag> <value>`   | Config  | Set installed package parameter       |
+| `stats`                          | EXEC    | Display statistics                    |
 
 ---
 
@@ -466,25 +662,9 @@ def configure_syslog(channel, server_ip: str, port: int = 514,
                      level: str = "info", protocol: str = "udp"):
     """Configure the router to forward logs to an external syslog server."""
     run_command(channel, "configure terminal")
-    run_command(channel, f"syslog server {server_ip} {port}")
+    run_command(channel, f"syslog server {server_ip}:{port}")
     run_command(channel, f"syslog level {level}")
     run_command(channel, f"syslog protocol {protocol}")
-    run_command(channel, "end")
-    run_command(channel, "write memory")
-```
-
-### DNS Configuration for Ad Blocking
-
-```python
-def configure_sinkhole_dns(channel, sinkhole_ip: str):
-    """
-    Point the router's DNS resolver to a local sinkhole (Pi-hole / AdGuard).
-    The sinkhole_ip should be a device on the LAN.
-    """
-    run_command(channel, "configure terminal")
-    run_command(channel, "ip dns mode manual")
-    # Note: Actual upstream DNS server setting depends on router's specific
-    # DNS configuration options — use 'ip dns ?' for current firmware options.
     run_command(channel, "end")
     run_command(channel, "write memory")
 ```
@@ -495,6 +675,10 @@ def configure_sinkhole_dns(channel, sinkhole_ip: str):
 def get_running_config(channel) -> str:
     """Fetch the current running configuration."""
     return run_command(channel, "show running-config")
+
+def get_config_diff(channel) -> str:
+    """Show differences between running and startup config."""
+    return run_command(channel, "show running-config differences")
 
 def backup_config_to_file(channel, sftp_url: str):
     """Back up configuration to a remote file via SFTP."""
@@ -535,6 +719,18 @@ show ip routes
 
 # NTP sync status
 show ntp
+
+# Event history (JSON format, last 1 hour)
+show history begin 1h first json:
+
+# Speed test results
+show speedtest
+
+# Running vs startup config diff
+show running-config differences
+
+# VPN peer status
+show vpns
 ```
 
 ---
@@ -547,3 +743,14 @@ show ntp
 - **Config not persisting** — forgot to run `write memory`
 - **Pager blocking output** — send `terminal length 0` first in any automated session
 - **SSH host key rejection** — may need to clear known hosts or add `StrictHostKeyChecking=no` in paramiko
+- **SSH rate-limiting** — router may temporarily block connections after multiple failed auth attempts; wait 60+ seconds
+
+---
+
+## Discovery Data
+
+Full discovery results (JSON with complete command tree) are available at:
+- `scripts/cli_discovery_results.json` — structured command tree with descriptions
+- `scripts/cli_commands_flat.txt` — flat text reference of all commands
+
+Generated by `scripts/cli_discovery.py` on 2026-04-01 from router at 192.168.2.1.
