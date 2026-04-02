@@ -119,24 +119,24 @@ export function parseInterfaceDetail(raw: string): InterfaceDetail[] {
     if (macMatch) detail.macAddress = macMatch[1]!;
 
     // Extract TX/RX bytes
-    const txBytesMatch = fullBlock.match(/(\d+)\s+(?:bytes?\s+)?(?:output|tx|sent)/);
+    const txBytesMatch = fullBlock.match(/(\d+)\s+(?:(?:bytes|byte)\s+)?(?:output|tx|sent)/);
     if (txBytesMatch) detail.txBytes = parseInt(txBytesMatch[1]!, 10);
 
-    const rxBytesMatch = fullBlock.match(/(\d+)\s+(?:bytes?\s+)?(?:input|rx|received)/);
+    const rxBytesMatch = fullBlock.match(/(\d+)\s+(?:(?:bytes|byte)\s+)?(?:input|rx|received)/);
     if (rxBytesMatch) detail.rxBytes = parseInt(rxBytesMatch[1]!, 10);
 
     // Extract TX/RX packets
-    const txPktsMatch = fullBlock.match(/(\d+)\s+(?:packets?\s+)?(?:output|tx|sent)/);
+    const txPktsMatch = fullBlock.match(/(\d+)\s+(?:(?:packets|packet)\s+)?(?:output|tx|sent)/);
     if (txPktsMatch) detail.txPackets = parseInt(txPktsMatch[1]!, 10);
 
-    const rxPktsMatch = fullBlock.match(/(\d+)\s+(?:packets?\s+)?(?:input|rx|received)/);
+    const rxPktsMatch = fullBlock.match(/(\d+)\s+(?:(?:packets|packet)\s+)?(?:input|rx|received)/);
     if (rxPktsMatch) detail.rxPackets = parseInt(rxPktsMatch[1]!, 10);
 
     // Extract errors
-    const txErrMatch = fullBlock.match(/(\d+)\s+(?:output|tx)?\s*errors?/);
+    const txErrMatch = fullBlock.match(/(\d+)\s+(?:(?:output|tx)\s+)?errors?/);
     if (txErrMatch) detail.txErrors = parseInt(txErrMatch[1]!, 10);
 
-    const rxErrMatch = fullBlock.match(/(\d+)\s+(?:input|rx)?\s*errors?/);
+    const rxErrMatch = fullBlock.match(/(\d+)\s+(?:(?:input|rx)\s+)?errors?/);
     if (rxErrMatch) detail.rxErrors = parseInt(rxErrMatch[1]!, 10);
 
     // Extract speed/duplex

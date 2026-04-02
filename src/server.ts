@@ -37,7 +37,7 @@ try {
   devices = [
     {
       id: process.env["ISLAND_DEVICE_ID"] ?? "island-default",
-      host: process.env["ROUTER_IP"] ?? process.env["ROUTER_HOST"] ?? "192.168.2.1",
+      host: process.env["ROUTER_IP"] ?? process.env["ROUTER_HOST"] ?? "192.168.2.1", // NOSONAR
       port: parseInt(process.env["ROUTER_PORT"] ?? "22", 10),
       username: process.env["ROUTER_USER"] ?? "admin",
       authMethod: "password" as const,

@@ -35,7 +35,7 @@ export function parseRoutes(raw: string): Route[] {
 
     // Pattern: TYPE  dest/mask  [metric] via gateway, interface
     const viaMatch = line.match(
-      /^([A-Z*]+)\s+(\S+)\s+(?:\[(\d+)(?:\/\d+)?\]\s+)?via\s+(\S+),?\s*(\S*)$/i,
+      /^([A-Z*]+)\s+(\S+)\s+(?:\[(\d+)(?:\/\d+)?\]\s+)?via\s+([^,\s]+),?\s*(\S*)$/i,
     );
     if (viaMatch) {
       const [, type, dest, metric, gw, iface] = viaMatch;

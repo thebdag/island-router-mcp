@@ -31,7 +31,7 @@ export function parseLogEntries(raw: string): LogEntry[] {
   for (const line of lines) {
     // Try standard syslog format: Month Day HH:MM:SS hostname severity facility: message
     const syslogMatch = line.match(
-      /^(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+\S+\s+(\w+)\s+(\S+?):\s*(.*)$/,
+      /^(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+\S+\s+(\w+)\s+([^:\s]+):\s*(.*)$/,
     );
     if (syslogMatch) {
       results.push({
@@ -45,7 +45,7 @@ export function parseLogEntries(raw: string): LogEntry[] {
 
     // Fallback: try bracketed severity: [info] message
     const bracketMatch = line.match(
-      /^(\S+\s+\S+)?\s*\[(\w+)\]\s*(.*)$/,
+      /^(?:([^\[\]\s]+\s+[^\[\]\s]+)\s+)?\[(\w+)\]\s*(.*)$/,
     );
     if (bracketMatch) {
       results.push({
