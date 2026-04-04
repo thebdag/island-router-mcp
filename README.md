@@ -4,6 +4,8 @@
 
 An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that exposes Island Router CLI operations as structured tools for AI assistants like Google Antigravity, Claude, and other MCP-compatible clients.
 
+CLI behavior is aligned with the **official Island Router CLI Reference Guide (firmware 2.3.2)**.
+
 ---
 
 ## What This Does
@@ -12,13 +14,13 @@ This project provides two things:
 
 ### 🔧 MCP Server
 
-A TypeScript server that connects to Island Routers over SSH and exposes their Cisco-style CLI through **3 meta-tools** — designed to minimize token usage while covering all router operations.
+A TypeScript server that connects to Island Routers over SSH and exposes their CLI through **3 meta-tools** — designed to minimize token usage while covering all router operations.
 
 #### `island_list_devices`
 
 Lists configured devices from the inventory. No SSH connection required.
 
-#### `island_query` — All Read-Only Operations
+#### `island_query` — All Read-Only Operations (14 actions)
 
 A single tool for all read operations, dispatched by `action`:
 
@@ -30,11 +32,16 @@ A single tool for all read operations, dispatched by `action`:
 | `routes` | Parsed routing table with destinations, gateways, metrics |
 | `logs` | Parsed log entries + syslog forwarding configuration |
 | `config` | Full running-config text |
+| `config_diff` | Side-by-side diff of running vs startup configuration |
 | `vpns` | VPN peer status |
+| `dhcp_reservations` | DHCP static reservations in parse-friendly CSV format |
+| `speedtest` | Speed test history |
+| `history` | Event history in JSON format (pass `time` param, e.g. `1h`, `1d`, `1w`) |
+| `ntp` | Full NTP status — config, sync status, and peer associations |
 | `command` | Run any allowlisted `show` command (pass `command` param) |
 | `ping` | ICMP ping from the router (pass `target` param) |
 
-#### `island_configure` — All Write Operations (Guarded)
+#### `island_configure` — All Write Operations (9 actions, guarded)
 
 A single tool for all config mutations, dispatched by `action`. Every call requires `confirmation_phrase: "apply_change"` to prevent accidental changes.
 
@@ -42,7 +49,15 @@ A single tool for all config mutations, dispatched by `action`. Every call requi
 | --- | --- | --- |
 | `add_dhcp` | `mac`, `ip`, `hostname?` | Add a MAC → IP DHCP reservation |
 | `remove_dhcp` | `mac` | Remove a DHCP reservation |
-| `set_syslog` | `server_ip`, `port?`, `level?`, `protocol?` | Configure syslog forwarding |
+| `set_syslog` | `server_ip`, `port?`, `level?` (0-7), `protocol?` | Configure syslog forwarding |
+| `remove_syslog` | — | Remove syslog server configuration |
+| `set_hostname` | `hostname` | Set the router hostname |
+| `set_auto_update` | `days`, `time_str?` | Configure auto-update schedule |
+| `set_led` | `led_level` (0-100) | Set LED brightness |
+| `set_timezone` | `timezone` | Set system timezone |
+| `set_ntp` | `ntp_server` | Set NTP server address |
+
+> **Syslog levels are numeric 0-7:** 0=critical, 1=critical-unrecoverable, 2=recoverable-error, 3=less-severe-error, 4=warning, 5=informational, 6=debug, 7=verbose-debug (default).
 
 #### Why Meta-Tools?
 
@@ -54,7 +69,7 @@ Located in `.agent/skills/`, these are AI-readable references that give assistan
 
 | Skill | Domain | What It Provides |
 | --- | --- | --- |
-| `island-router-cli` | Networking | Exhaustive CLI reference for Island Router firmware 2.3.2 — auto-discovered 3,136 commands across EXEC and CONFIG modes, covering SNMP, tcpdump, DNS-over-HTTPS, VPN, event history, and more |
+| `island-router-cli` | Networking | CLI reference for Island Router fw 2.3.2 — aligned with official 260-page guide. 2-context model (Global + Interface), history ETL, syslog (numeric 0-7), VPN, SNMP, DNS-over-HTTPS |
 | `skill-mcp-builder` | Development | Guide for building MCP servers — project scaffolding, tool registration (v1 + v2), Zod schemas, meta-tool patterns |
 | `skill-observability-pipeline` | DevOps | Syslog → Promtail → Loki → Grafana pipeline setup with Docker Compose configs and Raspberry Pi considerations |
 | `skill-finops-gcp` | Cloud | GCP cost analysis via BigQuery billing exports, anomaly detection, budget alerts, Cloud Run rightsizing |
@@ -219,7 +234,7 @@ island-router-mcp/                # Workspace root
 ├── .agent/
 │   └── skills/
 │       └── island-router-cli/    # Skill & scripts consolidated here
-│           ├── SKILL.md          # Exhaustive CLI reference (canonical)
+│           ├── SKILL.md          # CLI reference (official guide-aligned)
 │           └── scripts/          # CLI discovery tooling
 │               ├── cli_discovery.py
 │               ├── cli_discovery_results.json
@@ -234,15 +249,18 @@ island-router-mcp/                # Workspace root
         └── logs.ts
 ```
 
-**Key design decision:** The Island Router uses a stateful Cisco-style CLI, so this server uses ssh2's interactive `shell()` mode (not `exec()`) to maintain session context across commands like `configure terminal` → config commands → `end` → `write memory`.
+**Key design decisions:**
+- The Island Router has a **2-context CLI** (Global + Interface), not a Cisco-style 4-level hierarchy. Configuration commands work directly from the global prompt — `configure terminal` is unnecessary.
+- This server uses ssh2's interactive `shell()` mode (not `exec()`) because the CLI is stateful across commands.
+- Config commands are issued directly without `configure terminal` → `end` wrappers, per the official CLI Reference Guide.
 
 ## Safety
 
 - **Read-only by default** — `island_query` only runs `show` commands
 - **Allowlisted commands** — the `command` action only permits a curated list of safe commands
 - **Write confirmation** — `island_configure` requires `confirmation_phrase: "apply_change"`
-- **Input validation** — MAC addresses and IP addresses are validated before being sent to the router
-- **Shell injection prevention** — ping targets are checked for metacharacters
+- **Input validation** — MAC addresses, IP addresses, and hostnames are validated before being sent to the router
+- **Shell injection prevention** — targets and values are checked for metacharacters
 - **No hardcoded secrets** — passwords come from env vars or the device inventory file (git-ignored)
 
 ## CLI Discovery
@@ -272,6 +290,8 @@ python cli_discovery.py
 | Output is truncated or hangs | Pager (`--More--`) blocking | The server sends `terminal length 0` automatically; if using scripts, send it manually after connecting |
 | `exec_command()` returns empty output | Router CLI is stateful, requires interactive shell | Use `shell()` / `invoke_shell()` instead of `exec()` / `exec_command()` |
 | `Unknown device_id` error | Device ID doesn't match inventory | Check `devices.json` or set `ISLAND_DEVICE_ID` env var |
+| Syslog level rejected | Using string names (`info`) instead of numbers | Use numeric levels 0-7 (e.g., `5` for informational) |
+| `configure terminal` errors | Command accepted but unnecessary | Issue config commands directly at the global prompt |
 
 ## License
 

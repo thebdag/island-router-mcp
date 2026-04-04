@@ -2,8 +2,8 @@
 
 Development conventions for the Island Router MCP Server.
 
-> **Canonical CLI reference:** See `SKILL.md` at the repo root for the exhaustive command
-> reference (auto-discovered 2026-04-01, 3,136 commands across EXEC and CONFIG modes).
+> **Canonical CLI reference:** See `.agent/skills/island-router-cli/SKILL.md` — aligned with the
+> official Island Router CLI Reference Guide (firmware 2.3.2, 260 pages).
 
 ---
 
@@ -54,19 +54,72 @@ When adding a new operation:
 - **Write?** Add a new action to `ConfigureActions` enum and a handler function.
 - **Do not** register a new top-level `server.tool()` unless it has a fundamentally different schema shape.
 
+### Current Action Inventory
+
+**Query actions** (14 total):
+
+| Action | Handler | Description |
+|---|---|---|
+| `status` | `queryStatus()` | Full overview (7 show commands) |
+| `interfaces` | `queryInterfaces()` | Parsed interface data (detail flag for TX/RX) |
+| `neighbors` | `queryNeighbors()` | Parsed ARP table |
+| `routes` | `queryRoutes()` | Parsed routing table |
+| `logs` | `queryLogs()` | Parsed log entries + syslog config |
+| `config` | `queryConfig()` | Full running-config text |
+| `config_diff` | `queryConfigDiff()` | Running vs startup config diff |
+| `vpns` | `queryVpns()` | VPN peer status |
+| `dhcp_reservations` | `queryDhcpReservations()` | DHCP reservations (CSV) |
+| `speedtest` | `querySpeedtest()` | Speed test history |
+| `history` | `queryHistory()` | Event history (JSON, with `time` param) |
+| `ntp` | `queryNtp()` | NTP config + status + associations |
+| `command` | `queryCommand()` | Any allowlisted show command |
+| `ping` | `queryPing()` | ICMP ping from router |
+
+**Configure actions** (9 total):
+
+| Action | Handler | Description |
+|---|---|---|
+| `add_dhcp` | `configAddDhcp()` | Add DHCP reservation |
+| `remove_dhcp` | `configRemoveDhcp()` | Remove DHCP reservation |
+| `set_syslog` | `configSyslog()` | Configure syslog (numeric level 0-7) |
+| `remove_syslog` | `configRemoveSyslog()` | Remove syslog server |
+| `set_hostname` | `configHostname()` | Set router hostname |
+| `set_auto_update` | `configAutoUpdate()` | Set update days + time |
+| `set_led` | `configLed()` | Set LED brightness (0-100) |
+| `set_timezone` | `configTimezone()` | Set timezone |
+| `set_ntp` | `configNtp()` | Set NTP server |
+
 ### Write Safety
 
 All write tools must:
 1. Require `confirmation_phrase: z.literal("apply_change")` as a parameter.
 2. Validate all user-supplied values (MAC, IP, hostnames) before sending to the router.
-3. Call `write memory` after applying changes.
-4. Return verification output (e.g., `show ip dhcp-reservations` after adding a reservation).
+3. Issue config commands **directly at the global prompt** — do NOT use `configure terminal` or `end`.
+4. Call `write memory` after applying changes.
+5. Return verification output (e.g., `show ip dhcp-reservations` after adding a reservation).
 
 ### Error Handling
 
 - Throw descriptive `Error` objects — the MCP SDK serializes them to the client.
 - Validate inputs early (before opening SSH sessions).
 - Use `withSession()` to guarantee `closeSession()` runs even on errors.
+
+## Island Router CLI Model
+
+> ⚠️ **The Island Router is NOT Cisco IOS.** Key differences from Cisco:
+
+| Aspect | Cisco IOS | Island Router |
+|---|---|---|
+| Configuration entry | `configure terminal` required | Config commands work from global prompt |
+| CLI modes | EXEC → Config → Interface Config | Global context + Interface context only |
+| `end` command | Returns from config to EXEC | Exits interface context to global |
+| `configure terminal` | Enters config mode | Accepted but **unnecessary** |
+| Syslog level | String names (`info`, `warning`) | **Numeric 0-7** (0=critical, 7=verbose) |
+
+**Rules for config handlers:**
+- **Do NOT** wrap commands in `configure terminal` → `end`. Issue commands directly.
+- **Do NOT** assume separate EXEC/config mode prompts beyond interface context.
+- The `interface <name>` command enters interface context; `end` returns to global.
 
 ## SSH Client Rules
 
@@ -80,15 +133,17 @@ All write tools must:
 
 ## CLI Syntax Corrections
 
-> These corrections were verified against the live router's `?` help system on 2026-04-01.
+> These corrections were verified against the official CLI Reference Guide (firmware 2.3.2).
 
-| What the docs said | What the router actually accepts |
+| What was assumed | What the router actually accepts |
 |---|---|
 | `syslog server <IP> <port>` | `syslog server <IP>:<port>` (colon separator) |
-| `syslog level info` | `syslog level <n>` (numeric severity, not keyword) |
+| `syslog level info` | `syslog level <0-7>` (numeric severity, not keyword) |
 | `led level <0-3>` | `led level <0-100>` (percentage, not level) |
 | `auto-update schedule <cron>` | `auto-update days <day>...` + `auto-update time <hh:mm>` |
-| `ip dns mode manual` | `ip dns mode recursive` or `ip dns mode https <name>` or `ip dns mode dnssec` |
+| `ip dns mode manual` | `ip dns mode recursive` or `https <name>` or `dnssec` |
+| `configure terminal` required for config | Config commands work from any context |
+| `end` returns from config to EXEC | `end` exits interface context to global |
 
 ## Parsers
 
@@ -105,6 +160,7 @@ All write tools must:
 - String interpolation with template literals, not concatenation.
 - Trailing commas in multi-line arrays, objects, and parameters.
 - Use `as const` for literal type assertions.
+- Extract validators into shared helper functions (e.g., `validateMac()`, `validateIp()`).
 
 ## Git Conventions
 
@@ -146,19 +202,19 @@ The `ALLOWED_SHOW_COMMANDS` array in `server.ts` controls which commands the `co
 will execute. When adding new commands:
 
 1. Only add read-only `show` commands — never `clear`, `write`, `reload`, etc.
-2. The allowlist uses prefix matching: `"show log"` also permits `"show log kernel"`, `"show log priority warning"`, etc.
+2. The allowlist uses prefix matching: `"show log"` also permits `"show log kernel"`, `"show log priority 4"`, etc.
 3. Refer to the exhaustive command reference in `SKILL.md` for the complete list of available `show` subcommands.
 
 ### Discovered Capabilities Not Yet Exposed as Actions
 
-The following router features were discovered during CLI exploration and may warrant new
-`QueryActions` or `ConfigureActions` in the future:
+The following router features were discovered and may warrant future actions:
 
 | Feature | Show Command | Config Command | Notes |
 |---|---|---|---|
 | SNMP | `show snmp` | `snmp-server community/host/user` | SNMPv1/v2c/v3 |
 | Packet capture | — | `tcpdump interface <name> filter <spec>` | Live BPF capture |
-| Speed test | `show speedtest` | `speedtest interface <name>` | Run & view results |
 | DNS over HTTPS | — | `ip dns mode https cloudflare\|google\|opendns` | Encrypted DNS |
-| Event history | `show history begin <time> first json:` | — | Structured JSON output |
-| Config diff | `show running-config differences` | — | Running vs startup diff |
+| Port forwarding | — | `ip port-forward tcp\|udp [pub-ip:]port target` | DNAT rules |
+| VPN peer mgmt | `show vpns` | `vpn peer <id> remote-ip/shutdown/visible` | WireGuard peers |
+| History instances | `show history` | `history <name> interval/filter/url` | Automated ETL |
+| Backup config | — | `backup url/interval/days` | Scheduled backup |

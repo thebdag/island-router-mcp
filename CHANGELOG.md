@@ -6,19 +6,47 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ---
 
-## [0.3.0] — 2026-04-01
+## [0.3.0] — 2026-04-03
+
+### Added
+- **5 new query actions** in `island_query`:
+  - `dhcp_reservations` — DHCP reservations in parse-friendly CSV format
+  - `speedtest` — speed test history
+  - `history` — event history in JSON format with `time` parameter for range (e.g., `1h`, `1d`, `1w`)
+  - `config_diff` — side-by-side running vs startup config diff
+  - `ntp` — full NTP status (config + sync status + associations)
+- **6 new configure actions** in `island_configure`:
+  - `set_hostname` — set router hostname
+  - `set_auto_update` — configure auto-update schedule (days + time)
+  - `set_led` — set LED brightness (0-100)
+  - `set_timezone` — set system timezone
+  - `set_ntp` — set NTP server address
+  - `remove_syslog` — remove syslog server configuration
+- **9 new show commands** added to `ALLOWED_SHOW_COMMANDS`:
+  - `show version history`, `show running-config differences`, `show ntp associations`, `show ntp status`, `show packages detail`, `show interface transceivers diagnostics`, `show ip recommendations`, `show ssh-client-keys detail`, `show config email`
+- **Syslog level reference table** in SKILL.md (numeric 0-7 with descriptions)
+- **History Instance Management** section in SKILL.md — full ETL export documentation (`history <instance> interval/filter/output-format/url`)
+- **Default values table** in SKILL.md from official guide (DHCP lease 1800s, backup interval 3600s, VPN port 51820, LED level 100, etc.)
+- Input validation helpers: `validateMac()`, `validateIp()`, `validateSafe()`
 
 ### Changed
-- **SKILL.md**: Complete rewrite with exhaustive CLI reference auto-discovered from live router (3,136 commands across EXEC and CONFIG modes). Added SNMP, tcpdump, speed test, event history format specifiers, DNS-over-HTTPS providers, and VPN server configuration sections.
-- **Syslog syntax fix**: Changed `syslog server <IP> <port>` to `syslog server <IP>:<port>` — the router uses a colon separator, not a space.
-- **Expanded show command allowlist**: Added `show speedtest`, `show config email` to `ALLOWED_SHOW_COMMANDS` in `server.ts`.
-- **CODING-STANDARDS.md**: Added SSH rate-limiting guidance, password quoting rules, CLI syntax corrections table, `dotenv` dependency docs, `ROUTER_IP`/`ROUTER_KEY` env var documentation, and a "Discovered Capabilities Not Yet Exposed" roadmap section.
-- **REPOMAP.md**: Restructured to show parent workspace (`island-router-cli/`) with discovery scripts alongside `island-mcp-server/`. Added discovery data files to Key Files table.
-- **README.md**: Expanded environment variables documentation (`ROUTER_IP`, `ROUTER_KEY`, `ROUTER_HOST`), added CLI discovery reference and troubleshooting section for SSH rate-limiting and password quoting.
+- **SKILL.md**: Complete rewrite aligned with official 260-page CLI Reference Guide (firmware 2.3.2):
+  - CLI mode model corrected from 4-level Cisco hierarchy to **2 contexts** (Global + Interface)
+  - All `configure terminal` references removed from documentation and automation examples
+  - `end` documented as exiting **interface context** (not config mode)
+  - Device fingerprinting (`ip ident4/6`) clarified as SSDP/mDNS-based
+  - DNS over HTTPS limitation documented (Island does NOT intercept DoH)
+  - `show log` syntax expanded with all 10 combining options; `where` supports regex
+  - VPN peer sub-commands documented (remote-ip, local-ip, route, shutdown, unapproved, visible)
+- **server.ts**: Removed `configure terminal` / `end` calls from all 3 existing config handlers (`configAddDhcp`, `configRemoveDhcp`, `configSyslog`) — config commands run directly from the global prompt per the official guide
+- **CODING-STANDARDS.md**: Updated for 2-context CLI model, expanded "Discovered Capabilities" to reflect newly implemented actions, updated CLI syntax corrections table
+- **REPOMAP.md**: Updated architecture diagram and data flow to reflect new actions and corrected CLI model
+- **README.md**: Updated tool tables with all new query and configure actions, corrected CLI terminology, added official guide reference
 
 ### Fixed
-- `configSyslog()` in `server.ts` now uses colon-separated `IP:port` format for the `syslog server` command, matching the router's actual CLI syntax.
-- Added `ROUTER_IP` as preferred alias for `ROUTER_HOST` in env var documentation.
+- **🔴 Critical: Syslog level format** — changed from broken string enum (`"info"`, `"warning"`) to **numeric 0-7** matching the official guide. Previous string values would produce `% Invalid input` on the router.
+- Syslog server command already uses colon separator (fixed in prior version)
+- `configSyslog()` response now includes `level_name` for human-readable output alongside the numeric level
 
 ## [0.2.0] — 2025-04-01
 
