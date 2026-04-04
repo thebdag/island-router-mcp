@@ -114,8 +114,8 @@ export function parseVpnPeers(raw: string): VpnSummary {
       const transferMatch = /^transfer:\s*(.+)/i.exec(trimmed);
       if (transferMatch) {
         const transferStr = transferMatch[1] ?? "";
-        currentPeer.rxBytes = parseTransferValue(transferStr, /([0-9.]+)\s*([KMGT]i?B)\s+received/i);
-        currentPeer.txBytes = parseTransferValue(transferStr, /([0-9.]+)\s*([KMGT]i?B)\s+sent/i);
+        currentPeer.rxBytes = parseTransferValue(transferStr, /(\d+(?:\.\d+)?)\s+([KMGT]i?B)\s+received/i);
+        currentPeer.txBytes = parseTransferValue(transferStr, /(\d+(?:\.\d+)?)\s+([KMGT]i?B)\s+sent/i);
         continue;
       }
 

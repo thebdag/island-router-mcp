@@ -19,7 +19,7 @@ export interface SyslogConfig {
 
 // Pre-compiled regexes for log parsing
 const SYSLOG_RE = /^(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+\S+\s+(\w+)\s+([^:\s]+):\s*(.*)$/;
-const BRACKET_RE = /^(?:([^\[\]\s]+\s+[^\[\]\s]+)\s+)?\[(\w+)]\s*(.*)$/;
+const BRACKET_RE = /^(?:([^[\]\s]+\s+[^[\]\s]+)\s+)?\[(\w+)]\s*(.*)$/;
 const SERVER_RE = /(?:syslog\s+)?server[:\s]+(\S+)/;
 const PORT_RE = /port[:\s]+(\d+)/;
 const LEVEL_RE = /level[:\s]+(\w+)/;

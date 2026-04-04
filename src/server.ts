@@ -584,6 +584,67 @@ const ConfigureActions = z.enum([
   "set_ntp",          // Set NTP server (ntp_server)
 ]);
 
+/** Dispatch a configure action — extracted to keep cognitive complexity low. */
+async function dispatchConfigure(params: {
+  device_id: string;
+  action: string;
+  mac?: string;
+  ip?: string;
+  hostname?: string;
+  server_ip?: string;
+  port: number;
+  level: number;
+  protocol: "udp" | "tcp";
+  days?: string;
+  time_str?: string;
+  led_level?: number;
+  timezone?: string;
+  ntp_server?: string;
+}): Promise<QueryResult> {
+  const dev = getDeviceOrThrow(params.device_id);
+
+  switch (params.action) {
+    case "add_dhcp": {
+      if (!params.mac) throw new Error("'mac' required for add_dhcp");
+      if (!params.ip) throw new Error("'ip' required for add_dhcp");
+      return configAddDhcp(dev, params.mac, params.ip, params.hostname);
+    }
+    case "remove_dhcp": {
+      if (!params.mac) throw new Error("'mac' required for remove_dhcp");
+      return configRemoveDhcp(dev, params.mac);
+    }
+    case "set_syslog": {
+      if (!params.server_ip) throw new Error("'server_ip' required for set_syslog");
+      return configSyslog(dev, params.server_ip, params.port, params.level, params.protocol);
+    }
+    case "remove_syslog": {
+      return configRemoveSyslog(dev);
+    }
+    case "set_hostname": {
+      if (!params.hostname) throw new Error("'hostname' required for set_hostname");
+      return configHostname(dev, params.hostname);
+    }
+    case "set_auto_update": {
+      if (!params.days) throw new Error("'days' required for set_auto_update");
+      return configAutoUpdate(dev, params.days, params.time_str);
+    }
+    case "set_led": {
+      if (params.led_level === undefined) throw new Error("'led_level' required for set_led");
+      return configLed(dev, params.led_level);
+    }
+    case "set_timezone": {
+      if (!params.timezone) throw new Error("'timezone' required for set_timezone");
+      return configTimezone(dev, params.timezone);
+    }
+    case "set_ntp": {
+      if (!params.ntp_server) throw new Error("'ntp_server' required for set_ntp");
+      return configNtp(dev, params.ntp_server);
+    }
+    default:
+      throw new Error(`Unknown configure action: '${params.action}'`);
+  }
+}
+
 server.tool(
   "island_configure",
   `WRITE operation on an Island Router — persists changes with 'write memory'. Requires confirmation_phrase='apply_change'. Actions: add_dhcp (mac, ip, hostname?), remove_dhcp (mac), set_syslog (server_ip, port?, level 0-7, protocol?), remove_syslog, set_hostname (hostname), set_auto_update (days e.g. 'all'/'none'/'monday friday', time_str e.g. '3:00'), set_led (led_level 0-100), set_timezone (timezone e.g. 'US' or 'America/Los_Angeles'), set_ntp (ntp_server).`,
@@ -616,49 +677,7 @@ server.tool(
     if (params.confirmation_phrase !== "apply_change") {
       throw new Error("confirmation_phrase must be exactly 'apply_change'");
     }
-
-    const dev = getDeviceOrThrow(params.device_id);
-
-    switch (params.action) {
-      case "add_dhcp": {
-        if (!params.mac) throw new Error("'mac' required for add_dhcp");
-        if (!params.ip) throw new Error("'ip' required for add_dhcp");
-        return configAddDhcp(dev, params.mac, params.ip, params.hostname);
-      }
-      case "remove_dhcp": {
-        if (!params.mac) throw new Error("'mac' required for remove_dhcp");
-        return configRemoveDhcp(dev, params.mac);
-      }
-      case "set_syslog": {
-        if (!params.server_ip) throw new Error("'server_ip' required for set_syslog");
-        return configSyslog(dev, params.server_ip, params.port, params.level, params.protocol);
-      }
-      case "remove_syslog": {
-        return configRemoveSyslog(dev);
-      }
-      case "set_hostname": {
-        if (!params.hostname) throw new Error("'hostname' required for set_hostname");
-        return configHostname(dev, params.hostname);
-      }
-      case "set_auto_update": {
-        if (!params.days) throw new Error("'days' required for set_auto_update");
-        return configAutoUpdate(dev, params.days, params.time_str);
-      }
-      case "set_led": {
-        if (params.led_level === undefined) throw new Error("'led_level' required for set_led");
-        return configLed(dev, params.led_level);
-      }
-      case "set_timezone": {
-        if (!params.timezone) throw new Error("'timezone' required for set_timezone");
-        return configTimezone(dev, params.timezone);
-      }
-      case "set_ntp": {
-        if (!params.ntp_server) throw new Error("'ntp_server' required for set_ntp");
-        return configNtp(dev, params.ntp_server);
-      }
-      default:
-        throw new Error(`Unknown configure action: '${params.action}'`);
-    }
+    return dispatchConfigure(params);
   },
 );
 

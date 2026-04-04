@@ -19,7 +19,7 @@ export interface Neighbor {
 }
 
 // Pre-compiled regexes
-const VIA_RE = /^([A-Z*]+)\s+(\S+)\s+(?:\[(\d+)(?:\/\d+)?]\s+)?via\s+([^,\s]+),?\s*(\S*)$/i;
+const VIA_RE = /^([A-Z*]+)\s+(\S+)\s+(?:\[(\d+)\/\d+]\s+)?via\s+([^,\s]+),?\s*(\S*)$/i;
 const DIRECT_RE = /^([A-Z*]+)\s+(\S+)\s+is\s+directly\s+connected,?\s*(\S*)$/i;
 const IP_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
 

@@ -55,7 +55,7 @@ export function parseVersion(raw: string): VersionInfo {
     }
 
     // Serial number
-    const serialMatch = /serial\s*(?:number|no\.?|#)?[:\s]+(\S+)/i.exec(line);
+    const serialMatch = /serial(?:\s+(?:number|no\.?|#))?[:\s]+(\S+)/i.exec(line);
     if (serialMatch) {
       info.serialNumber = serialMatch[1] ?? "";
     }
@@ -67,7 +67,7 @@ export function parseVersion(raw: string): VersionInfo {
     }
 
     // Build date
-    const buildMatch = /(?:build|compile)\s*(?:date|time)?[:\s]+(.+)/i.exec(line);
+    const buildMatch = /(?:build|compile)(?:\s+(?:date|time))?[:\s]+(.+)/i.exec(line);
     if (buildMatch) {
       info.buildDate = buildMatch[1]?.trim() ?? "";
     }
@@ -140,7 +140,7 @@ export function parsePing(raw: string): PingResult {
     }
 
     // Stats line: "5 packets transmitted, 5 packets received, 0% packet loss"
-    const statsMatch = /(\d+)\s+(?:packets?\s+)?(?:transmitted|sent)[,\s]+(\d+)\s+(?:packets?\s+)?received[,\s]+(\d+(?:\.\d+)?)\s*%\s*(?:packet\s+)?loss/i.exec(line);
+    const statsMatch = /(\d+)\s+packets?\s+(?:transmitted|sent),\s*(\d+)\s+packets?\s+received,\s*(\d+(?:\.\d+)?)%\s+(?:packet\s+)?loss/i.exec(line);
     if (statsMatch) {
       result.sent = Number.parseInt(statsMatch[1] ?? "0", 10);
       result.received = Number.parseInt(statsMatch[2] ?? "0", 10);
