@@ -215,21 +215,23 @@ Supports `"authMethod": "key"` with a `"privateKeyPath"` field for SSH key-based
 ## Architecture
 
 ```text
-island-router-cli/                   # Parent workspace
-├── SKILL.md                         # Exhaustive CLI reference (canonical)
-├── scripts/
-│   ├── cli_discovery.py             # Recursive CLI crawler (paramiko)
-│   ├── cli_discovery_results.json   # Full command tree (3,136 commands)
-│   └── cli_commands_flat.txt        # Flat text reference
+island-router-mcp/                # Workspace root
+├── .agent/
+│   └── skills/
+│       └── island-router-cli/    # Skill & scripts consolidated here
+│           ├── SKILL.md          # Exhaustive CLI reference (canonical)
+│           └── scripts/          # CLI discovery tooling
+│               ├── cli_discovery.py
+│               ├── cli_discovery_results.json
+│               └── cli_commands_flat.txt
 │
-└── island-mcp-server/               # MCP server
-    └── src/
-        ├── server.ts                # 3 meta-tools with action dispatch
-        ├── islandSsh.ts             # Interactive shell SSH client
-        └── parsers/                 # CLI output → structured JSON
-            ├── interfaces.ts
-            ├── routes.ts
-            └── logs.ts
+└── src/                          # TypeScript source
+    ├── server.ts                 # 3 meta-tools with action dispatch
+    ├── islandSsh.ts              # Interactive shell SSH client
+    └── parsers/                  # CLI output → structured JSON
+        ├── interfaces.ts
+        ├── routes.ts
+        └── logs.ts
 ```
 
 **Key design decision:** The Island Router uses a stateful Cisco-style CLI, so this server uses ssh2's interactive `shell()` mode (not `exec()`) to maintain session context across commands like `configure terminal` → config commands → `end` → `write memory`.
@@ -245,7 +247,7 @@ island-router-cli/                   # Parent workspace
 
 ## CLI Discovery
 
-The `scripts/` directory contains tooling for exhaustive CLI command discovery:
+The `.agent/skills/island-router-cli/scripts/` directory contains tooling for exhaustive CLI command discovery:
 
 - **`cli_discovery.py`** — Recursive crawler that traverses the router's `?` help system to map every command and argument. Includes safety guards (skips destructive commands), enum detection (prunes combinatorial explosions), and retry logic for SSH rate-limiting.
 - **`cli_discovery_results.json`** — Structured JSON output of the full command tree (3,136 commands).
@@ -254,7 +256,7 @@ The `scripts/` directory contains tooling for exhaustive CLI command discovery:
 To re-run discovery after a firmware update:
 
 ```bash
-cd scripts
+cd .agent/skills/island-router-cli/scripts
 pip install paramiko python-dotenv
 python cli_discovery.py
 ```
