@@ -81,6 +81,7 @@ island-router-mcp/                # Workspace root
 | `skill-homelab-pi` | DevOps | Docker Compose, systemd hardening, Pi maintenance |
 | `skill-publisher` | Meta | Skill validation → GitHub release → catalog update |
 | `skill-firmware-differ` | Networking | Firmware upgrade runbooks with rollback plans |
+| `skill-network-traffic-etl` | Analytics | Per-device traffic ETL — bandwidth, sites visited, categories → Grafana/InfluxDB/BigQuery |
 | `skill-knowledge-harvester` | Meta | Extract conversation learnings into Knowledge Items |
 
 ## Architecture

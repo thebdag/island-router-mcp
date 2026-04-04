@@ -26,20 +26,20 @@ A single tool for all read operations, dispatched by `action`:
 
 | Action | What It Returns |
 | --- | --- |
-| `status` | Full overview — interfaces, routes, neighbors, version, stats, clock |
-| `interfaces` | Parsed interface data (set `detail: true` for TX/RX byte counters) |
-| `neighbors` | Parsed ARP table (IP → MAC → interface → state) |
-| `routes` | Parsed routing table with destinations, gateways, metrics |
-| `logs` | Parsed log entries + syslog forwarding configuration |
-| `config` | Full running-config text |
-| `config_diff` | Side-by-side diff of running vs startup configuration |
-| `vpns` | VPN peer status |
-| `dhcp_reservations` | DHCP static reservations in parse-friendly CSV format |
-| `speedtest` | Speed test history |
-| `history` | Event history in JSON format (pass `time` param, e.g. `1h`, `1d`, `1w`) |
-| `ntp` | Full NTP status — config, sync status, and peer associations |
-| `command` | Run any allowlisted `show` command (pass `command` param) |
-| `ping` | ICMP ping from the router (pass `target` param) |
+| `status` | **Structured** — parsed interfaces, routes, neighbors, version + raw stats, clock |
+| `interfaces` | **Structured** — name, status, protocol, description (+ TX/RX with `detail: true`) |
+| `neighbors` | **Structured** — IP, MAC, interface, state per neighbor |
+| `routes` | **Structured** — destination, mask, gateway, interface, metric, type |
+| `logs` | **Structured** — timestamp, severity, facility, message + syslog config |
+| `config` | Raw text — full running-config |
+| `config_diff` | Raw text — side-by-side running vs startup diff |
+| `vpns` | **Structured** — peers with endpoints, transfer bytes, handshake status |
+| `dhcp_reservations` | **Structured** — MAC, IP, hostname, interface, status per reservation |
+| `speedtest` | **Structured** — download/upload Mbps, latency, timestamp per entry |
+| `history` | JSON — event history from router (pass `time` e.g. `1h`, `1d`, `1w`) |
+| `ntp` | **Structured** — server config, sync status, peer associations |
+| `command` | Raw text — any allowlisted `show` command (pass `command` param) |
+| `ping` | **Structured** — sent, received, loss%, RTT min/avg/max, TTL |
 
 #### `island_configure` — All Write Operations (9 actions, guarded)
 
@@ -79,6 +79,7 @@ Located in `.agent/skills/`, these are AI-readable references that give assistan
 | `skill-homelab-pi` | DevOps | Raspberry Pi service management — Docker Compose, systemd hardening, SD card longevity, backups |
 | `skill-publisher` | Meta | Skill publishing pipeline — validation gates, README generation, GitHub releases, catalog updates |
 | `skill-firmware-differ` | Networking | Firmware upgrade runbooks with pre/post snapshots, compatibility analysis, rollback plans |
+| `skill-network-traffic-etl` | Analytics | Per-device traffic ETL — bandwidth consumption, sites visited, content categories → Grafana, InfluxDB, BigQuery, CSV |
 | `skill-knowledge-harvester` | Meta | Extracts reusable knowledge from conversation logs into structured Knowledge Items |
 
 ---
@@ -243,16 +244,35 @@ island-router-mcp/                # Workspace root
 └── src/                          # TypeScript source
     ├── server.ts                 # 3 meta-tools with action dispatch
     ├── islandSsh.ts              # Interactive shell SSH client
-    └── parsers/                  # CLI output → structured JSON
-        ├── interfaces.ts
-        ├── routes.ts
-        └── logs.ts
+    └── parsers/                  # CLI output → structured JSON (7 modules, 15 functions)
+        ├── interfaces.ts         # show interface / show interface summary
+        ├── routes.ts             # show ip routes / show ip neighbors
+        ├── logs.ts               # show log / show syslog
+        ├── dhcp.ts               # show ip dhcp-reservations (CSV + table)
+        ├── vpn.ts                # show vpns (WireGuard peers)
+        ├── ntp.ts                # show ntp / status / associations
+        └── system.ts             # show version, ping, show speedtest
 ```
 
 **Key design decisions:**
 - The Island Router has a **2-context CLI** (Global + Interface), not a Cisco-style 4-level hierarchy. Configuration commands work directly from the global prompt — `configure terminal` is unnecessary.
 - This server uses ssh2's interactive `shell()` mode (not `exec()`) because the CLI is stateful across commands.
 - Config commands are issued directly without `configure terminal` → `end` wrappers, per the official CLI Reference Guide.
+- **11 of 14 query actions return structured JSON**, not raw CLI text. Only `config`, `config_diff`, and `command` return raw text (intentionally — they are unstructured by nature).
+
+## Structured Parsers
+
+The `src/parsers/` directory contains **7 modules** with **15 pure functions** that transform raw CLI text into typed JSON. All parsers follow the same contract: `(raw: string) → StructuredType`, with no I/O and resilient handling of unparseable lines.
+
+| Module | Functions | Parses Output From |
+| --- | --- | --- |
+| `interfaces.ts` | `parseInterfaceSummary`, `parseInterfaceDetail` | `show interface summary`, `show interface` |
+| `routes.ts` | `parseRoutes`, `parseNeighbors` | `show ip routes`, `show ip neighbors` |
+| `logs.ts` | `parseLogEntries`, `parseSyslogConfig` | `show log`, `show syslog` |
+| `dhcp.ts` | `parseDhcpReservationsCsv`, `parseDhcpReservationsTable` | `show ip dhcp-reservations [csv]` |
+| `vpn.ts` | `parseVpnPeers` | `show vpns` (WireGuard-style + table fallback) |
+| `ntp.ts` | `parseNtpConfig`, `parseNtpStatus`, `parseNtpAssociations` | `show ntp`, `show ntp status`, `show ntp associations` |
+| `system.ts` | `parseVersion`, `parsePing`, `parseSpeedtest` | `show version`, `ping`, `show speedtest` |
 
 ## Safety
 

@@ -29,6 +29,10 @@ import {
 import { parseInterfaceSummary, parseInterfaceDetail } from "./parsers/interfaces.js";
 import { parseRoutes, parseNeighbors } from "./parsers/routes.js";
 import { parseLogEntries, parseSyslogConfig } from "./parsers/logs.js";
+import { parseDhcpReservationsCsv } from "./parsers/dhcp.js";
+import { parseVpnPeers } from "./parsers/vpn.js";
+import { parseNtpConfig, parseNtpStatus, parseNtpAssociations } from "./parsers/ntp.js";
+import { parseVersion, parsePing, parseSpeedtest } from "./parsers/system.js";
 
 // ─── Device inventory ────────────────────────────────────────────────────────
 
@@ -181,11 +185,11 @@ async function queryStatus(dev: DeviceConfig): Promise<QueryResult> {
 
   return text({
     device_id: dev.id, host: dev.host,
-    interfaces: result["show interface summary"],
+    interfaces: parseInterfaceSummary(result["show interface summary"] ?? ""),
     ip_interfaces: result["show ip interface"],
-    routes: result["show ip routes"],
-    neighbors: result["show ip neighbors"],
-    version: result["show version"],
+    routes: parseRoutes(result["show ip routes"] ?? ""),
+    neighbors: parseNeighbors(result["show ip neighbors"] ?? ""),
+    version: parseVersion(result["show version"] ?? ""),
     stats: result["show stats"],
     clock: result["show clock"],
   });
@@ -227,7 +231,8 @@ async function queryConfig(dev: DeviceConfig): Promise<QueryResult> {
 
 async function queryVpns(dev: DeviceConfig): Promise<QueryResult> {
   const output = await withSession(dev, (s) => runCommand(s, "show vpns", 2000));
-  return { content: [{ type: "text" as const, text: output }] };
+  const parsed = parseVpnPeers(output);
+  return text({ device_id: dev.id, vpn: parsed });
 }
 
 async function queryCommand(dev: DeviceConfig, command: string): Promise<QueryResult> {
@@ -250,17 +255,20 @@ async function queryCommand(dev: DeviceConfig, command: string): Promise<QueryRe
 async function queryPing(dev: DeviceConfig, target: string): Promise<QueryResult> {
   validateSafe(target, "target");
   const output = await withSession(dev, (s) => runCommand(s, `ping ${target}`, 10000));
-  return text({ device_id: dev.id, target, output });
+  const parsed = parsePing(output);
+  return text({ device_id: dev.id, ping: parsed });
 }
 
 async function queryDhcpReservations(dev: DeviceConfig): Promise<QueryResult> {
   const output = await withSession(dev, (s) => runCommand(s, "show ip dhcp-reservations csv", 2000));
-  return text({ device_id: dev.id, command: "show ip dhcp-reservations csv", output });
+  const parsed = parseDhcpReservationsCsv(output);
+  return text({ device_id: dev.id, count: parsed.length, reservations: parsed });
 }
 
 async function querySpeedtest(dev: DeviceConfig): Promise<QueryResult> {
   const output = await withSession(dev, (s) => runCommand(s, "show speedtest", 3000));
-  return text({ device_id: dev.id, command: "show speedtest", output });
+  const parsed = parseSpeedtest(output);
+  return text({ device_id: dev.id, count: parsed.length, speedtest_results: parsed });
 }
 
 async function queryHistory(dev: DeviceConfig, time?: string): Promise<QueryResult> {
@@ -285,9 +293,9 @@ async function queryNtp(dev: DeviceConfig): Promise<QueryResult> {
   }));
   return text({
     device_id: dev.id,
-    ntp_config: result.ntp,
-    ntp_status: result.status,
-    ntp_associations: result.associations,
+    config: parseNtpConfig(result.ntp),
+    status: parseNtpStatus(result.status),
+    associations: parseNtpAssociations(result.associations),
   });
 }
 
