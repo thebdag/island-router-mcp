@@ -250,7 +250,8 @@ exit                        # Move up one level / logout from global
 | `ip dns mode recursive`                   | Recursive resolution without DNSSEC                      |
 | `ip dns local-only on|off`               | Respond only to local IP addresses                       |
 | `ip dns redirect <domain> <server>`       | Redirect domain queries to specific server               |
-| `no ip dns redirect`                      | Remove DNS redirect                                      |
+| `no ip dns redirect <domain>`             | Remove DNS redirect for a specific domain                |
+| `no ip dns redirect`                      | Remove all DNS redirects                                 |
 
 **DNS over HTTPS providers (discovered):**
 ```
@@ -261,6 +262,49 @@ ip dns mode https <url>          # Custom DoH endpoint
 ```
 
 > ⚠️ **DoH limitation:** Island will **never** intercept and respond to DNS over HTTPS (DoH) requests targeted to another server. To force all DNS through Island, block access to external DoH servers using Island's filtering capabilities.
+
+#### DNS Redirect / Hostname Filtering
+
+The `ip dns redirect` command is the **CLI-accessible mechanism for hostname-level filtering**. It redirects all DNS queries for a specific domain to a designated server IP. This enables two key use cases:
+
+1. **Sinkhole / Block a domain** — redirect to `0.0.0.0` so the domain becomes unreachable
+2. **Redirect to a custom server** — send queries to a Pi-hole, AdGuard, or other DNS filter
+
+**Syntax:**
+```
+ip dns redirect <domain> <server-ip>
+no ip dns redirect <domain>
+```
+
+**Examples — Blocking (sinkhole to 0.0.0.0):**
+```
+ip dns redirect facebook.com 0.0.0.0
+ip dns redirect tiktok.com 0.0.0.0
+ip dns redirect ads.doubleclick.net 0.0.0.0
+write memory
+```
+
+**Examples — Redirecting to Pi-hole / AdGuard:**
+```
+ip dns redirect ads.example.com 192.168.2.50
+ip dns redirect tracking.example.com 192.168.2.50
+write memory
+```
+
+**Removing a redirect:**
+```
+no ip dns redirect facebook.com
+write memory
+```
+
+**Viewing active redirects:**
+Active DNS redirects appear in the running configuration:
+```
+show running-config
+```
+Look for lines matching: `ip dns redirect <domain> <server>`
+
+> **Note:** The primary content filtering interface is the Island app (umbrellas, categories, custom hostname lists). The `ip dns redirect` CLI command provides a supplementary mechanism for per-domain DNS redirection that can be automated via SSH.
 
 ---
 

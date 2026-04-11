@@ -33,6 +33,7 @@ import { parseDhcpReservationsCsv } from "./parsers/dhcp.js";
 import { parseVpnPeers } from "./parsers/vpn.js";
 import { parseNtpConfig, parseNtpStatus, parseNtpAssociations } from "./parsers/ntp.js";
 import { parseVersion, parsePing, parseSpeedtest } from "./parsers/system.js";
+import { parseDnsRedirects } from "./parsers/dnsRedirects.js";
 
 // ─── Device inventory ────────────────────────────────────────────────────────
 
@@ -158,6 +159,14 @@ function validateIp(ip: string): void {
 function validateSafe(value: string, label: string): void {
   if (/[;&|`$(){}]/.test(value)) {
     throw new Error(`Invalid ${label} — contains shell metacharacters`);
+  }
+}
+
+function validateDomain(domain: string): void {
+  validateSafe(domain, "domain");
+  // Basic domain validation: alphanumeric, hyphens, dots, wildcards
+  if (!/^[\w.*-]+(?:\.[\w.*-]+)*$/.test(domain)) {
+    throw new Error(`Invalid domain: '${domain}'`);
   }
 }
 
@@ -293,10 +302,16 @@ async function queryNtp(dev: DeviceConfig): Promise<QueryResult> {
   }));
   return text({
     device_id: dev.id,
-    config: parseNtpConfig(result.ntp),
+    ntp_config: parseNtpConfig(result.ntp),
     status: parseNtpStatus(result.status),
     associations: parseNtpAssociations(result.associations),
   });
+}
+
+async function queryDnsRedirects(dev: DeviceConfig): Promise<QueryResult> {
+  const output = await withSession(dev, (s) => runCommand(s, "show running-config", 4000));
+  const parsed = parseDnsRedirects(output);
+  return text({ device_id: dev.id, count: parsed.length, dns_redirects: parsed });
 }
 
 // ─── Configure action handlers ──────────────────────────────────────────────
@@ -482,6 +497,51 @@ async function configNtp(dev: DeviceConfig, ntpServer: string): Promise<QueryRes
   });
 }
 
+async function configAddDnsRedirect(
+  dev: DeviceConfig, domain: string, redirectServer: string,
+): Promise<QueryResult> {
+  validateDomain(domain);
+  validateIp(redirectServer);
+
+  const result = await withSession(dev, async (s) => {
+    const configOut = await runCommand(s, `ip dns redirect ${domain} ${redirectServer}`, 2000);
+    const writeOut = await runCommand(s, "write memory", 3000);
+    const verify = await runCommand(s, "show running-config", 4000);
+    return { configOut, writeOut, verify };
+  });
+
+  const redirects = parseDnsRedirects(result.verify);
+  return text({
+    applied: true, device_id: dev.id,
+    domain, redirect_server: redirectServer,
+    config_output: result.configOut,
+    write_output: result.writeOut,
+    active_redirects: redirects,
+  });
+}
+
+async function configRemoveDnsRedirect(
+  dev: DeviceConfig, domain: string,
+): Promise<QueryResult> {
+  validateDomain(domain);
+
+  const result = await withSession(dev, async (s) => {
+    const configOut = await runCommand(s, `no ip dns redirect ${domain}`, 2000);
+    const writeOut = await runCommand(s, "write memory", 3000);
+    const verify = await runCommand(s, "show running-config", 4000);
+    return { configOut, writeOut, verify };
+  });
+
+  const redirects = parseDnsRedirects(result.verify);
+  return text({
+    removed: true, device_id: dev.id,
+    domain,
+    config_output: result.configOut,
+    write_output: result.writeOut,
+    active_redirects: redirects,
+  });
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function text(obj: unknown): QueryResult {
@@ -525,13 +585,14 @@ const QueryActions = z.enum([
   "speedtest",           // Speed test history
   "history",             // Event history (JSON format; pass 'time' for range, e.g. '1h', '1d', '1w')
   "ntp",                 // Full NTP status (config + sync status + associations)
+  "dns_redirects",       // DNS redirect rules (hostname filtering — domain → server mappings)
   "command",             // Run an allowlisted show command (pass 'command' param)
   "ping",                // ICMP ping from router (pass 'target' param)
 ]);
 
 server.tool(
   "island_query",
-  `Read-only query against an Island Router. Actions: status (full overview), interfaces (parsed, set detail=true for byte counters), neighbors (ARP table), routes (routing table), logs (parsed entries + syslog config), config (running-config), config_diff (running vs startup diff), vpns (peer status), dhcp_reservations (CSV format), speedtest (history), history (event history JSON — pass 'time' e.g. '1h','1d','1w'), ntp (config + status + associations), command (any allowlisted show command — pass 'command'), ping (pass 'target').`,
+  `Read-only query against an Island Router. Actions: status (full overview), interfaces (parsed, set detail=true for byte counters), neighbors (ARP table), routes (routing table), logs (parsed entries + syslog config), config (running-config), config_diff (running vs startup diff), vpns (peer status), dhcp_reservations (CSV format), speedtest (history), history (event history JSON — pass 'time' e.g. '1h','1d','1w'), ntp (config + status + associations), dns_redirects (hostname filtering rules — shows domain→server redirect mappings), command (any allowlisted show command — pass 'command'), ping (pass 'target').`,
   {
     device_id: z.string().describe("Device ID from inventory"),
     action: QueryActions.describe("Query action to perform"),
@@ -556,6 +617,7 @@ server.tool(
       case "speedtest":          return querySpeedtest(dev);
       case "history":            return queryHistory(dev, time);
       case "ntp":                return queryNtp(dev);
+      case "dns_redirects":     return queryDnsRedirects(dev);
       case "command": {
         if (!command) throw new Error("'command' parameter required for action='command'");
         return queryCommand(dev, command);
@@ -573,15 +635,17 @@ server.tool(
 // ─── Tool 3: island_configure (all write operations, guarded) ────────────────
 
 const ConfigureActions = z.enum([
-  "add_dhcp",         // Add DHCP reservation (mac, ip, hostname?)
-  "remove_dhcp",      // Remove DHCP reservation (mac)
-  "set_syslog",       // Configure syslog forwarding (server_ip, port?, level?, protocol?)
-  "remove_syslog",    // Remove syslog server
-  "set_hostname",     // Set router hostname (hostname)
-  "set_auto_update",  // Configure auto-update schedule (days, time_str?)
-  "set_led",          // Set LED brightness (led_level: 0-100)
-  "set_timezone",     // Set system timezone (timezone)
-  "set_ntp",          // Set NTP server (ntp_server)
+  "add_dhcp",            // Add DHCP reservation (mac, ip, hostname?)
+  "remove_dhcp",         // Remove DHCP reservation (mac)
+  "set_syslog",          // Configure syslog forwarding (server_ip, port?, level?, protocol?)
+  "remove_syslog",       // Remove syslog server
+  "set_hostname",        // Set router hostname (hostname)
+  "set_auto_update",     // Configure auto-update schedule (days, time_str?)
+  "set_led",             // Set LED brightness (led_level: 0-100)
+  "set_timezone",        // Set system timezone (timezone)
+  "set_ntp",             // Set NTP server (ntp_server)
+  "add_dns_redirect",    // Add DNS redirect / block hostname (domain, redirect_server)
+  "remove_dns_redirect", // Remove DNS redirect (domain)
 ]);
 
 /** Dispatch a configure action — extracted to keep cognitive complexity low. */
@@ -596,6 +660,8 @@ async function dispatchConfigure(params: {
   level: number;
   protocol: "udp" | "tcp";
   days?: string;
+  domain?: string;
+  redirect_server?: string;
   time_str?: string;
   led_level?: number;
   timezone?: string;
@@ -640,6 +706,15 @@ async function dispatchConfigure(params: {
       if (!params.ntp_server) throw new Error("'ntp_server' required for set_ntp");
       return configNtp(dev, params.ntp_server);
     }
+    case "add_dns_redirect": {
+      if (!params.domain) throw new Error("'domain' required for add_dns_redirect");
+      if (!params.redirect_server) throw new Error("'redirect_server' required for add_dns_redirect (use '0.0.0.0' to block/sinkhole)");
+      return configAddDnsRedirect(dev, params.domain, params.redirect_server);
+    }
+    case "remove_dns_redirect": {
+      if (!params.domain) throw new Error("'domain' required for remove_dns_redirect");
+      return configRemoveDnsRedirect(dev, params.domain);
+    }
     default:
       throw new Error(`Unknown configure action: '${params.action}'`);
   }
@@ -647,7 +722,7 @@ async function dispatchConfigure(params: {
 
 server.tool(
   "island_configure",
-  `WRITE operation on an Island Router — persists changes with 'write memory'. Requires confirmation_phrase='apply_change'. Actions: add_dhcp (mac, ip, hostname?), remove_dhcp (mac), set_syslog (server_ip, port?, level 0-7, protocol?), remove_syslog, set_hostname (hostname), set_auto_update (days e.g. 'all'/'none'/'monday friday', time_str e.g. '3:00'), set_led (led_level 0-100), set_timezone (timezone e.g. 'US' or 'America/Los_Angeles'), set_ntp (ntp_server).`,
+  `WRITE operation on an Island Router — persists changes with 'write memory'. Requires confirmation_phrase='apply_change'. Actions: add_dhcp (mac, ip, hostname?), remove_dhcp (mac), set_syslog (server_ip, port?, level 0-7, protocol?), remove_syslog, set_hostname (hostname), set_auto_update (days e.g. 'all'/'none'/'monday friday', time_str e.g. '3:00'), set_led (led_level 0-100), set_timezone (timezone e.g. 'US' or 'America/Los_Angeles'), set_ntp (ntp_server), add_dns_redirect (domain + redirect_server — use '0.0.0.0' to block/sinkhole a hostname), remove_dns_redirect (domain — removes the redirect for a specific hostname).`,
   {
     device_id: z.string().describe("Device ID from inventory"),
     action: ConfigureActions.describe("Configuration action"),
@@ -672,6 +747,9 @@ server.tool(
     timezone: z.string().optional().describe("For set_timezone: 2-letter country code or timezone name (e.g. 'US', 'America/Los_Angeles')"),
     // NTP params
     ntp_server: z.string().optional().describe("For set_ntp: NTP server address"),
+    // DNS redirect params
+    domain: z.string().optional().describe("For add_dns_redirect / remove_dns_redirect: domain name to redirect or block (e.g. 'facebook.com', 'ads.example.com')"),
+    redirect_server: z.string().optional().describe("For add_dns_redirect: IP to redirect DNS queries to. Use '0.0.0.0' to block/sinkhole the domain, or a server IP like '192.168.2.50' to redirect"),
   },
   async (params) => {
     if (params.confirmation_phrase !== "apply_change") {

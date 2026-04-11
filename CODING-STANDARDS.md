@@ -56,7 +56,7 @@ When adding a new operation:
 
 ### Current Action Inventory
 
-**Query actions** (14 total):
+**Query actions** (15 total):
 
 | Action | Handler | Description |
 |---|---|---|
@@ -72,10 +72,11 @@ When adding a new operation:
 | `speedtest` | `querySpeedtest()` | Speed test history |
 | `history` | `queryHistory()` | Event history (JSON, with `time` param) |
 | `ntp` | `queryNtp()` | NTP config + status + associations |
+| `dns_redirects` | `queryDnsRedirects()` | DNS redirect rules (hostname → server) |
 | `command` | `queryCommand()` | Any allowlisted show command |
 | `ping` | `queryPing()` | ICMP ping from router |
 
-**Configure actions** (9 total):
+**Configure actions** (11 total):
 
 | Action | Handler | Description |
 |---|---|---|
@@ -88,6 +89,8 @@ When adding a new operation:
 | `set_led` | `configLed()` | Set LED brightness (0-100) |
 | `set_timezone` | `configTimezone()` | Set timezone |
 | `set_ntp` | `configNtp()` | Set NTP server |
+| `add_dns_redirect` | `configAddDnsRedirect()` | Add DNS redirect / block hostname |
+| `remove_dns_redirect` | `configRemoveDnsRedirect()` | Remove DNS redirect for a domain |
 
 ### Write Safety
 
