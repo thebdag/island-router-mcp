@@ -8,6 +8,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+### Added
+- **`.agent/PREREQUISITES.md`** — setup for agents (build, `devices.json`/env, SSH, Cursor/Claude/Antigravity/MCP wiring)
+- **`.agent/README.md`** — entrypoint for the `.agent/` workspace
+
 ### Changed
 - **Agent orientation**: added `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`; rewrote `REPOMAP.md`; expanded `CODING-STANDARDS.md` with dual-surface (MCP + AXI) extension playbooks and doc hygiene rules
 - **Skill discovery**: `.agent/skills/README.md` catalog; `.agents/skills` symlink for Codex/OpenCode-compatible skill roots

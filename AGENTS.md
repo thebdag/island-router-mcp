@@ -4,10 +4,11 @@ Orientation for AI coding agents working in **island-router-mcp**.
 
 ## Read first (in order)
 
-1. **This file** — how to work here
-2. [`REPOMAP.md`](REPOMAP.md) — layout, entrypoints, architecture
-3. [`CODING-STANDARDS.md`](CODING-STANDARDS.md) — conventions + Island CLI gotchas
-4. [`CHANGELOG.md`](CHANGELOG.md) — what changed recently
+1. **[`.agent/PREREQUISITES.md`](.agent/PREREQUISITES.md)** — build, credentials, SSH, Cursor/Claude/Antigravity wiring
+2. **This file** — how to work here
+3. [`REPOMAP.md`](REPOMAP.md) — layout, entrypoints, architecture
+4. [`CODING-STANDARDS.md`](CODING-STANDARDS.md) — conventions + Island CLI gotchas
+5. [`CHANGELOG.md`](CHANGELOG.md) — what changed recently
 
 Deep references (load on demand via skills):
 

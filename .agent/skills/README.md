@@ -2,6 +2,8 @@
 
 Primary skill tree for this repo. Codex / OpenCode also resolve `.agents/skills/` (symlink here).
 
+**Before any router work:** read [../PREREQUISITES.md](../PREREQUISITES.md) (Node build, credentials, SSH, Cursor/Claude/Antigravity wiring).
+
 | Skill | Domain | Load when |
 | --- | --- | --- |
 | [`island-axi`](./island-axi/SKILL.md) | AXI CLI | Operating or extending `island-axi` |
@@ -20,4 +22,4 @@ Primary skill tree for this repo. Codex / OpenCode also resolve `.agents/skills/
 
 Installable copy of the AXI skill also lives at `skills/island-axi/` (keep in sync with `.agent/skills/island-axi/`).
 
-See [`AGENTS.md`](../../AGENTS.md) for workflow.
+See [`.agent/README.md`](../README.md) and [`AGENTS.md`](../../AGENTS.md) for workflow.

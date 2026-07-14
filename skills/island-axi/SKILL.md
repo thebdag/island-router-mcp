@@ -27,6 +27,11 @@ If output shows a follow-up starting with `island-axi`, run the same binary form
 
 ## Requirements
 
+**Full setup:** see [`.agent/PREREQUISITES.md`](../../PREREQUISITES.md) (build, `devices.json` / env, SSH, host wiring).
+
+Minimum:
+
+- `npm install && npm run build`
 - `devices.json` (from `devices.example.json`) **or** `ROUTER_IP` + `ROUTER_PASS` / `ROUTER_KEY`
 - Network SSH access to the Island Router (firmware 2.3.2 CLI model)
 
