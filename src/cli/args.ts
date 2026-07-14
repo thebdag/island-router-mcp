@@ -97,11 +97,12 @@ export function assertKnownFlags(
   if (unknown.length === 0) return;
 
   const first = unknown[0]!;
+  const flagList = known.map((k) => `--${k}`).join(", ");
   throw new AxiError(
     `unknown flag --${first} for \`${command}\``,
     "VALIDATION_ERROR",
     [
-      `valid flags for \`${command}\`: ${known.map((k) => `--${k}`).join(", ")} (--help always allowed)`,
+      `valid flags for \`${command}\`: ${flagList} (--help always allowed)`,
     ],
   );
 }

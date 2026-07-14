@@ -12,6 +12,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **`.agent/PREREQUISITES.md`** — setup for agents (build, `devices.json`/env, SSH, Cursor/Claude/Antigravity/MCP wiring)
 - **`.agent/README.md`** — entrypoint for the `.agent/` workspace
 
+### Fixed
+- SonarCloud ReDoS on `validateDomain` — replaced nested-quantifier regex with label split + linear checks
+- Cognitive complexity in AXI `configureCommand` — table-driven required flags + extracted helpers
+- Nested ternary in `callCore`, union overrides on `ConfigureParams`, nested template literals in flag errors
+
 ### Changed
 - **Agent orientation**: added `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`; rewrote `REPOMAP.md`; expanded `CODING-STANDARDS.md` with dual-surface (MCP + AXI) extension playbooks and doc hygiene rules
 - **Skill discovery**: `.agent/skills/README.md` catalog; `.agents/skills` symlink for Codex/OpenCode-compatible skill roots

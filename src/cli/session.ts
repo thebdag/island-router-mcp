@@ -75,11 +75,12 @@ export async function callCore<T>(fn: () => Promise<T>): Promise<T> {
   } catch (err) {
     if (err instanceof AxiError) throw err;
     const message = err instanceof Error ? err.message : String(err);
-    const code = /Invalid |required|not allowed/i.test(message)
-      ? "VALIDATION_ERROR"
-      : /SSH|password|ROUTER_|auth|ECONNREFUSED|timed out/i.test(message)
-        ? "CONNECTION_ERROR"
-        : "ERROR";
+    let code = "ERROR";
+    if (/Invalid |required|not allowed/i.test(message)) {
+      code = "VALIDATION_ERROR";
+    } else if (/SSH|password|ROUTER_|auth|ECONNREFUSED|timed out/i.test(message)) {
+      code = "CONNECTION_ERROR";
+    }
     throw new AxiError(message, code);
   }
 }

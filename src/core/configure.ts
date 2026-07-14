@@ -281,14 +281,14 @@ export const CONFIGURE_ACTIONS = [
 export type ConfigureAction = (typeof CONFIGURE_ACTIONS)[number];
 
 export interface ConfigureParams {
-  action: ConfigureAction | string;
+  action: ConfigureAction;
   mac?: string;
   ip?: string;
   hostname?: string;
   server_ip?: string;
   port?: number;
   level?: number;
-  protocol?: "udp" | "tcp" | string;
+  protocol?: "udp" | "tcp";
   days?: string;
   domain?: string;
   redirect_server?: string;

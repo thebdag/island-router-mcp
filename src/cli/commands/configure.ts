@@ -5,7 +5,11 @@ import {
   deviceFromContext,
   type CliContext,
 } from "../session.js";
-import { dispatchConfigure } from "../../core/configure.js";
+import {
+  dispatchConfigure,
+  type ConfigureAction,
+  type ConfigureParams,
+} from "../../core/configure.js";
 
 const ACTIONS = [
   "add-dhcp",
@@ -23,7 +27,7 @@ const ACTIONS = [
 
 type Action = (typeof ACTIONS)[number];
 
-const ACTION_TO_CORE: Record<Action, string> = {
+const ACTION_TO_CORE: Record<Action, ConfigureAction> = {
   "add-dhcp": "add_dhcp",
   "remove-dhcp": "remove_dhcp",
   "set-syslog": "set_syslog",
@@ -51,6 +55,30 @@ const ACTION_FLAGS: Record<Action, string[]> = {
   "remove-dns-redirect": ["device", "domain", "confirm"],
 };
 
+/** Required flags per action — table-driven to keep configureCommand simple. */
+const REQUIRED_FLAGS: Record<Action, string[]> = {
+  "add-dhcp": ["mac", "ip"],
+  "remove-dhcp": ["mac"],
+  "set-syslog": ["server-ip"],
+  "remove-syslog": [],
+  "set-hostname": ["hostname"],
+  "set-auto-update": ["days"],
+  "set-led": ["level"],
+  "set-timezone": ["timezone"],
+  "set-ntp": ["server"],
+  "add-dns-redirect": ["domain", "redirect-server"],
+  "remove-dns-redirect": ["domain"],
+};
+
+const HELP_BY_ACTION: Partial<Record<Action, string[]>> = {
+  "add-dhcp": ["Run `island-axi dhcp` to list reservations"],
+  "remove-dhcp": ["Run `island-axi dhcp` to verify"],
+  "set-syslog": ["Run `island-axi logs` to view recent entries"],
+  "set-ntp": ["Run `island-axi ntp` to verify sync status"],
+  "add-dns-redirect": ["Run `island-axi dns-redirects` to list rules"],
+  "remove-dns-redirect": ["Run `island-axi dns-redirects` to verify"],
+};
+
 function requireFlag(
   flags: Record<string, string | boolean>,
   name: string,
@@ -58,17 +86,16 @@ function requireFlag(
 ): string {
   const value = flagString(flags, name);
   if (!value) {
-    throw new AxiError(`--${name} is required for ${action}`, "VALIDATION_ERROR", [
-      `island-axi configure ${action} --help`,
-    ]);
+    const helpCmd = `island-axi configure ${action} --help`;
+    throw new AxiError(`--${name} is required for ${action}`, "VALIDATION_ERROR", [helpCmd]);
   }
   return value;
 }
 
-export async function configureCommand(
-  args: string[],
-  context?: CliContext,
-): Promise<Record<string, unknown>> {
+function parseConfigureAction(args: string[]): {
+  action: Action;
+  flags: Record<string, string | boolean>;
+} {
   const actionRaw = args[0];
   if (!actionRaw || actionRaw === "--help") {
     throw new AxiError("configure action is required", "VALIDATION_ERROR", [
@@ -85,20 +112,22 @@ export async function configureCommand(
 
   const { positionals, flags } = parseFlags(args.slice(1));
   if (positionals.length > 0) {
+    const helpCmd = `island-axi configure ${action} --help`;
     throw new AxiError(
       `unexpected argument '${positionals[0]}'`,
       "VALIDATION_ERROR",
-      [`island-axi configure ${action} --help`],
+      [helpCmd],
     );
   }
 
   const known = ACTION_FLAGS[action];
   const unknown = Object.keys(flags).filter((k) => !known.includes(k));
   if (unknown.length > 0) {
+    const validList = known.map((k) => `--${k}`).join(", ");
     throw new AxiError(
       `unknown flag --${unknown[0]} for \`configure ${action}\``,
       "VALIDATION_ERROR",
-      [`valid flags: ${known.map((k) => `--${k}`).join(", ")}`],
+      [`valid flags: ${validList}`],
     );
   }
 
@@ -110,59 +139,48 @@ export async function configureCommand(
     );
   }
 
-  // Validate required flags before SSH
-  if (action === "add-dhcp") {
-    requireFlag(flags, "mac", action);
-    requireFlag(flags, "ip", action);
-  } else if (action === "remove-dhcp") {
-    requireFlag(flags, "mac", action);
-  } else if (action === "set-syslog") {
-    requireFlag(flags, "server-ip", action);
-  } else if (action === "set-hostname") {
-    requireFlag(flags, "hostname", action);
-  } else if (action === "set-auto-update") {
-    requireFlag(flags, "days", action);
-  } else if (action === "set-led") {
-    requireFlag(flags, "level", action);
-  } else if (action === "set-timezone") {
-    requireFlag(flags, "timezone", action);
-  } else if (action === "set-ntp") {
-    requireFlag(flags, "server", action);
-  } else if (action === "add-dns-redirect") {
-    requireFlag(flags, "domain", action);
-    requireFlag(flags, "redirect-server", action);
-  } else if (action === "remove-dns-redirect") {
-    requireFlag(flags, "domain", action);
+  for (const name of REQUIRED_FLAGS[action]) {
+    requireFlag(flags, name, action);
   }
 
-  const device = deviceFromContext(context, flagString(flags, "device"));
+  return { action, flags };
+}
+
+function buildCoreParams(
+  action: Action,
+  flags: Record<string, string | boolean>,
+): ConfigureParams {
   const portStr = flagString(flags, "port");
   const levelStr = flagString(flags, "level");
+  const protocol = flagString(flags, "protocol");
 
-  const result = await callCore(() =>
-    dispatchConfigure(device, {
-      action: ACTION_TO_CORE[action],
-      mac: flagString(flags, "mac"),
-      ip: flagString(flags, "ip"),
-      hostname: flagString(flags, "hostname"),
-      server_ip: flagString(flags, "server-ip"),
-      port: portStr ? Number.parseInt(portStr, 10) : undefined,
-      level: action === "set-syslog" && levelStr
-        ? Number.parseInt(levelStr, 10)
-        : undefined,
-      protocol: flagString(flags, "protocol"),
-      days: flagString(flags, "days"),
-      time_str: flagString(flags, "time"),
-      led_level: action === "set-led" && levelStr
-        ? Number.parseInt(levelStr, 10)
-        : undefined,
-      timezone: flagString(flags, "timezone"),
-      ntp_server: flagString(flags, "server"),
-      domain: flagString(flags, "domain"),
-      redirect_server: flagString(flags, "redirect-server"),
-    }),
-  );
+  return {
+    action: ACTION_TO_CORE[action],
+    mac: flagString(flags, "mac"),
+    ip: flagString(flags, "ip"),
+    hostname: flagString(flags, "hostname"),
+    server_ip: flagString(flags, "server-ip"),
+    port: portStr ? Number.parseInt(portStr, 10) : undefined,
+    level: action === "set-syslog" && levelStr
+      ? Number.parseInt(levelStr, 10)
+      : undefined,
+    protocol: protocol === "tcp" || protocol === "udp" ? protocol : undefined,
+    days: flagString(flags, "days"),
+    time_str: flagString(flags, "time"),
+    led_level: action === "set-led" && levelStr
+      ? Number.parseInt(levelStr, 10)
+      : undefined,
+    timezone: flagString(flags, "timezone"),
+    ntp_server: flagString(flags, "server"),
+    domain: flagString(flags, "domain"),
+    redirect_server: flagString(flags, "redirect-server"),
+  };
+}
 
+function compactConfigureResult(
+  action: Action,
+  result: Record<string, unknown>,
+): Record<string, unknown> {
   const compact: Record<string, unknown> = { ...result };
   delete compact.config_output;
   delete compact.write_output;
@@ -170,16 +188,18 @@ export async function configureCommand(
   delete compact.time_output;
   if (typeof compact.reservations === "string") delete compact.reservations;
   if (typeof compact.ntp_config === "string") delete compact.ntp_config;
-
-  const helpByAction: Partial<Record<Action, string[]>> = {
-    "add-dhcp": ["Run `island-axi dhcp` to list reservations"],
-    "remove-dhcp": ["Run `island-axi dhcp` to verify"],
-    "set-syslog": ["Run `island-axi logs` to view recent entries"],
-    "set-ntp": ["Run `island-axi ntp` to verify sync status"],
-    "add-dns-redirect": ["Run `island-axi dns-redirects` to list rules"],
-    "remove-dns-redirect": ["Run `island-axi dns-redirects` to verify"],
-  };
-  if (helpByAction[action]) compact.help = helpByAction[action];
-
+  const help = HELP_BY_ACTION[action];
+  if (help) compact.help = help;
   return compact;
+}
+
+export async function configureCommand(
+  args: string[],
+  context?: CliContext,
+): Promise<Record<string, unknown>> {
+  const { action, flags } = parseConfigureAction(args);
+  const device = deviceFromContext(context, flagString(flags, "device"));
+  const params = buildCoreParams(action, flags);
+  const result = await callCore(() => dispatchConfigure(device, params));
+  return compactConfigureResult(action, result);
 }

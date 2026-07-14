@@ -18,9 +18,16 @@ export function validateSafe(value: string, label: string): void {
   }
 }
 
+/** Label chars for DNS domains / wildcards — linear check, no nested quantifiers. */
+const DOMAIN_LABEL_RE = /^[\w*-]+$/;
+
 export function validateDomain(domain: string): void {
   validateSafe(domain, "domain");
-  if (!/^[\w.*-]+(?:\.[\w.*-]+)*$/.test(domain)) {
+  if (domain.length === 0 || domain.length > 253) {
+    throw new Error(`Invalid domain: '${domain}'`);
+  }
+  const labels = domain.split(".");
+  if (labels.some((label) => label.length === 0 || label.length > 63 || !DOMAIN_LABEL_RE.test(label))) {
     throw new Error(`Invalid domain: '${domain}'`);
   }
 }

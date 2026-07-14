@@ -76,3 +76,20 @@ describe("allowed show commands", () => {
     expect(isCommandAllowed("reload")).toBe(false);
   });
 });
+
+describe("validateDomain", () => {
+  it("accepts normal and wildcard domains", async () => {
+    const { validateDomain } = await import("../src/core/validate.js");
+    expect(() => validateDomain("example.com")).not.toThrow();
+    expect(() => validateDomain("ads.example.com")).not.toThrow();
+    expect(() => validateDomain("*.example.com")).not.toThrow();
+  });
+
+  it("rejects empty labels and metacharacters", async () => {
+    const { validateDomain } = await import("../src/core/validate.js");
+    expect(() => validateDomain("")).toThrow(/Invalid domain/);
+    expect(() => validateDomain(".example.com")).toThrow(/Invalid domain/);
+    expect(() => validateDomain("ex ample.com")).toThrow(/Invalid/);
+    expect(() => validateDomain("evil;rm.com")).toThrow(/Invalid/);
+  });
+});
