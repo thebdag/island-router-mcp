@@ -6,6 +6,8 @@ An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that 
 
 CLI behavior is aligned with the **official Island Router CLI Reference Guide (firmware 2.3.2)**.
 
+**For coding agents:** start at [`AGENTS.md`](AGENTS.md), then [`REPOMAP.md`](REPOMAP.md) and [`CODING-STANDARDS.md`](CODING-STANDARDS.md). Skills live under `.agent/skills/` (mirrored at `.agents/skills/`).
+
 ---
 
 ## What This Does

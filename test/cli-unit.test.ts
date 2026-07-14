@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { assertKnownFlags, parseFlags, parseLimit } from "../src/cli/args.js";
 import { parseFieldsFlag, pickFields, truncateText } from "../src/cli/format.js";
 import { homeCommand } from "../src/cli/home.js";
-import { isCommandAllowed, normalizeShowCommand } from "../src/cli/allowedCommands.js";
+import { isCommandAllowed, normalizeShowCommand } from "../src/allowedCommands.js";
 import { AxiError } from "axi-sdk-js";
 
 describe("parseFlags", () => {

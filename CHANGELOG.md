@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **Agent orientation**: added `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`; rewrote `REPOMAP.md`; expanded `CODING-STANDARDS.md` with dual-surface (MCP + AXI) extension playbooks and doc hygiene rules
+- **Skill discovery**: `.agent/skills/README.md` catalog; `.agents/skills` symlink for Codex/OpenCode-compatible skill roots
+- **Allowlist single source of truth**: `src/allowedCommands.ts` shared by MCP and `island-axi` (removes duplicated lists)
+
 ## [0.4.0] — 2026-07-14
 
 ### Added
