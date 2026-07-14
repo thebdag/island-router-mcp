@@ -6,15 +6,33 @@ An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that 
 
 CLI behavior is aligned with the **official Island Router CLI Reference Guide (firmware 2.3.2)**.
 
+**For coding agents:** start at [`AGENTS.md`](AGENTS.md), then [`REPOMAP.md`](REPOMAP.md) and [`CODING-STANDARDS.md`](CODING-STANDARDS.md). Skills live under `.agent/skills/` (mirrored at `.agents/skills/`).
+
 ---
 
 ## What This Does
 
-This project provides two things:
+This project provides three things:
 
-### 🔧 MCP Server
+### ⚡ island-axi (AXI CLI)
 
-A TypeScript server that connects to Island Routers over SSH and exposes their CLI through **3 meta-tools** — designed to minimize token usage while covering all router operations.
+Agent-first shell CLI built on [AXI](https://axi.md/) principles — TOON output, content-first home view, contextual `help[]`, truncated large fields with `--full`, and guarded mutations via `--confirm`.
+
+```bash
+npm run build
+node build/cli/island-axi.js          # device inventory + next steps
+node build/cli/island-axi.js status
+node build/cli/island-axi.js neighbors --device island-edge-1
+island-axi setup hooks                # optional ambient SessionStart context
+```
+
+Prefer `island-axi` over raw SSH **and** over MCP for agent shell workflows. See skill `island-axi` / `skills/island-axi/SKILL.md`.
+
+Both AXI and MCP call the same **`src/core/`** action layer — add router capabilities once there.
+
+### 🔧 MCP Server (thin adapter)
+
+Optional MCP adapter for hosts that only speak MCP. Same core actions as `island-axi`, exposed as **3 meta-tools**.
 
 #### `island_list_devices`
 
@@ -65,10 +83,12 @@ Traditional MCP servers register one tool per operation (13+ tools). Each tool's
 
 ### 📖 Agent Skills
 
-Located in `.agent/skills/`, these are AI-readable references that give assistants context when this repo is open as a workspace.
+Located in `.agent/skills/` (and installable `skills/island-axi/`), these are AI-readable references that give assistants context when this repo is open as a workspace.
 
 | Skill | Domain | What It Provides |
 | --- | --- | --- |
+| `island-axi` | Networking / AXI | Agent-first CLI usage — TOON output, commands, hooks, configure safety |
+| `axi` | Standards | AXI design principles (from [axi.md](https://axi.md/)) for reviewing agent CLIs |
 | `island-router-cli` | Networking | CLI reference for Island Router fw 2.3.2 — aligned with official 260-page guide. 2-context model (Global + Interface), history ETL, syslog (numeric 0-7), VPN, SNMP, DNS-over-HTTPS |
 | `skill-mcp-builder` | Development | Guide for building MCP servers — project scaffolding, tool registration (v1 + v2), Zod schemas, meta-tool patterns |
 | `skill-observability-pipeline` | DevOps | Syslog → Promtail → Loki → Grafana pipeline setup with Docker Compose configs and Raspberry Pi considerations |
