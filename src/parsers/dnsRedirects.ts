@@ -35,8 +35,8 @@ export function parseDnsRedirects(rawConfig: string): DnsRedirect[] {
     const match = /^ip\s+dns\s+redirect\s+(\S+)\s+(\S+)$/i.exec(trimmed);
     if (match) {
       results.push({
-        domain: match[1] as string,
-        server: match[2] as string,
+        domain: match[1] ?? "",
+        server: match[2] ?? "",
       });
     }
   }

@@ -21,6 +21,66 @@ export interface VpnSummary {
   peers: VpnPeer[];
 }
 
+/** Apply interface-level WireGuard fields (returns true if handled). */
+function applyInterfaceField(summary: VpnSummary, trimmed: string, currentPeer: Partial<VpnPeer> | null): boolean {
+  const ifaceMatch = /^interface:\s*(\S+)/i.exec(trimmed);
+  if (ifaceMatch) {
+    summary.interfaceName = ifaceMatch[1] ?? "";
+    return true;
+  }
+
+  const pubKeyMatch = /^public\s+key:\s*(\S+)/i.exec(trimmed);
+  if (pubKeyMatch && !currentPeer) {
+    summary.publicKey = pubKeyMatch[1] ?? "";
+    return true;
+  }
+
+  const portMatch = /^listening\s+port:\s*(\d+)/i.exec(trimmed);
+  if (portMatch) {
+    summary.listeningPort = Number.parseInt(portMatch[1] ?? "0", 10);
+    return true;
+  }
+
+  return false;
+}
+
+/** Apply peer-level WireGuard property fields (returns true if handled). */
+function applyPeerField(peer: Partial<VpnPeer>, trimmed: string): boolean {
+  const endpointMatch = /^endpoint:\s*(\S+)/i.exec(trimmed);
+  if (endpointMatch) {
+    peer.endpoint = endpointMatch[1] ?? "";
+    return true;
+  }
+
+  const allowedMatch = /^allowed\s+ips?:\s*(.+)/i.exec(trimmed);
+  if (allowedMatch) {
+    peer.remoteIp = (allowedMatch[1] ?? "").split(",")[0]?.trim() ?? "";
+    return true;
+  }
+
+  const handshakeMatch = /^latest\s+handshake:\s*(.+)/i.exec(trimmed);
+  if (handshakeMatch) {
+    peer.latestHandshake = handshakeMatch[1] ?? "";
+    return true;
+  }
+
+  const transferMatch = /^transfer:\s*(.+)/i.exec(trimmed);
+  if (transferMatch) {
+    const transferStr = transferMatch[1] ?? "";
+    peer.rxBytes = parseTransferValue(transferStr, /(\d+(?:\.\d+)?)\s+([KMGT]i?B)\s+received/i);
+    peer.txBytes = parseTransferValue(transferStr, /(\d+(?:\.\d+)?)\s+([KMGT]i?B)\s+sent/i);
+    return true;
+  }
+
+  const nameMatch = /^(?:name|preshared\s+key|comment):\s*(.+)/i.exec(trimmed);
+  if (nameMatch) {
+    peer.name = nameMatch[1] ?? "";
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * Parse `show vpns` output.
  *
@@ -48,38 +108,15 @@ export function parseVpnPeers(raw: string): VpnSummary {
     peers: [],
   };
 
-  const lines = raw.split("\n");
-
-  // Try WireGuard-style format first
   let currentPeer: Partial<VpnPeer> | null = null;
   let peerIndex = 0;
 
-  for (const line of lines) {
+  for (const line of raw.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    // Interface line
-    const ifaceMatch = /^interface:\s*(\S+)/i.exec(trimmed);
-    if (ifaceMatch) {
-      summary.interfaceName = ifaceMatch[1] ?? "";
-      continue;
-    }
+    if (applyInterfaceField(summary, trimmed, currentPeer)) continue;
 
-    // Public key (interface level)
-    const pubKeyMatch = /^public\s+key:\s*(\S+)/i.exec(trimmed);
-    if (pubKeyMatch && !currentPeer) {
-      summary.publicKey = pubKeyMatch[1] ?? "";
-      continue;
-    }
-
-    // Listening port
-    const portMatch = /^listening\s+port:\s*(\d+)/i.exec(trimmed);
-    if (portMatch) {
-      summary.listeningPort = Number.parseInt(portMatch[1] ?? "0", 10);
-      continue;
-    }
-
-    // New peer block
     const peerMatch = /^peer:\s*(\S+)/i.exec(trimmed);
     if (peerMatch) {
       if (currentPeer) {
@@ -90,50 +127,15 @@ export function parseVpnPeers(raw: string): VpnSummary {
       continue;
     }
 
-    // Peer properties (indented)
     if (currentPeer) {
-      const endpointMatch = /^endpoint:\s*(\S+)/i.exec(trimmed);
-      if (endpointMatch) {
-        currentPeer.endpoint = endpointMatch[1] ?? "";
-        continue;
-      }
-
-      const allowedMatch = /^allowed\s+ips?:\s*(.+)/i.exec(trimmed);
-      if (allowedMatch) {
-        // Use allowed IPs to derive remote IP
-        currentPeer.remoteIp = (allowedMatch[1] ?? "").split(",")[0]?.trim() ?? "";
-        continue;
-      }
-
-      const handshakeMatch = /^latest\s+handshake:\s*(.+)/i.exec(trimmed);
-      if (handshakeMatch) {
-        currentPeer.latestHandshake = handshakeMatch[1] ?? "";
-        continue;
-      }
-
-      const transferMatch = /^transfer:\s*(.+)/i.exec(trimmed);
-      if (transferMatch) {
-        const transferStr = transferMatch[1] ?? "";
-        currentPeer.rxBytes = parseTransferValue(transferStr, /(\d+(?:\.\d+)?)\s+([KMGT]i?B)\s+received/i);
-        currentPeer.txBytes = parseTransferValue(transferStr, /(\d+(?:\.\d+)?)\s+([KMGT]i?B)\s+sent/i);
-        continue;
-      }
-
-      // Peer name (preshared key or name field)
-      const nameMatch = /^(?:name|preshared\s+key|comment):\s*(.+)/i.exec(trimmed);
-      if (nameMatch) {
-        currentPeer.name = nameMatch[1] ?? "";
-        continue;
-      }
+      applyPeerField(currentPeer, trimmed);
     }
   }
 
-  // Push last peer
   if (currentPeer) {
     summary.peers.push(finalizePeer(currentPeer, peerIndex));
   }
 
-  // If no WireGuard-style peers found, try table format
   if (summary.peers.length === 0) {
     summary.peers = parseVpnTable(raw);
   }

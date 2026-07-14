@@ -12,7 +12,81 @@ export interface DhcpReservation {
 }
 
 const IP_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
-const MAC_RE = /^[0-9a-fA-F]{2}[:\-][0-9a-fA-F]{2}[:\-][0-9a-fA-F]{2}[:\-][0-9a-fA-F]{2}[:\-][0-9a-fA-F]{2}[:\-][0-9a-fA-F]{2}$/;
+const MAC_RE = /^[0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}$/;
+const SEPARATOR_RE = /^-{3,}/;
+
+type HeaderMap = Record<string, number>;
+
+/** Map CSV header column names to field indices. */
+function buildHeaderMap(cols: string[]): HeaderMap {
+  const headerMap: HeaderMap = {};
+  for (let j = 0; j < cols.length; j++) {
+    const col = cols[j] ?? "";
+    if (col.includes("mac")) headerMap["mac"] = j;
+    else if (col.includes("ip") || col.includes("address")) headerMap["ip"] = j;
+    else if (col.includes("host") || col.includes("name")) headerMap["hostname"] = j;
+    else if (col.includes("interface") || col.includes("iface")) headerMap["interface"] = j;
+    else if (col.includes("status") || col.includes("state")) headerMap["status"] = j;
+  }
+  return headerMap;
+}
+
+/** Detect a CSV header row and return its column map + next data index. */
+function detectCsvHeader(lines: string[]): { headerMap: HeaderMap; startIdx: number } | null {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    const lower = line.toLowerCase();
+    if (!lower.includes("mac") || (!lower.includes("ip") && !lower.includes("address"))) {
+      continue;
+    }
+    const cols = line.split(",").map((c) => c.trim().toLowerCase());
+    return { headerMap: buildHeaderMap(cols), startIdx: i + 1 };
+  }
+  return null;
+}
+
+/** Identify MAC/IP when both columns match their expected patterns (CSV heuristic). */
+function identifyMacIpStrict(first: string, second: string): { mac: string; ip: string } | null {
+  if (MAC_RE.test(first) && IP_RE.test(second)) return { mac: first, ip: second };
+  if (IP_RE.test(first) && MAC_RE.test(second)) return { mac: second, ip: first };
+  return null;
+}
+
+/** Identify MAC/IP from the first column's type (table format). */
+function identifyMacIpLoose(first: string, second: string): { mac: string; ip: string } | null {
+  if (MAC_RE.test(first)) return { mac: first, ip: second };
+  if (IP_RE.test(first)) return { mac: second, ip: first };
+  return null;
+}
+
+/** Parse one CSV data row using a header map. */
+function parseMappedCsvRow(parts: string[], headerMap: HeaderMap): DhcpReservation | null {
+  const mac = parts[headerMap["mac"] ?? 0] ?? "";
+  const ip = parts[headerMap["ip"] ?? 1] ?? "";
+  if (!mac || !ip) return null;
+  return {
+    mac,
+    ip,
+    hostname: parts[headerMap["hostname"] ?? 2] ?? "",
+    interface: parts[headerMap["interface"] ?? 3] ?? "",
+    status: parts[headerMap["status"] ?? 4] ?? "",
+  };
+}
+
+/** Parse one CSV data row without a header (heuristic column order). */
+function parseHeuristicCsvRow(parts: string[]): DhcpReservation | null {
+  const [first, second, ...rest] = parts;
+  if (!first || !second) return null;
+  const ids = identifyMacIpStrict(first, second);
+  if (!ids) return null;
+  return {
+    mac: ids.mac,
+    ip: ids.ip,
+    hostname: rest[0] ?? "",
+    interface: rest[1] ?? "",
+    status: rest[2] ?? "",
+  };
+}
 
 /**
  * Parse `show ip dhcp-reservations csv` output.
@@ -27,81 +101,49 @@ export function parseDhcpReservationsCsv(raw: string): DhcpReservation[] {
   const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
   const results: DhcpReservation[] = [];
 
-  // Detect header line
-  let headerMap: Record<string, number> | null = null;
-  let startIdx = 0;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
-    const lower = line.toLowerCase();
-    if (lower.includes("mac") && (lower.includes("ip") || lower.includes("address"))) {
-      // This is a header line — build column index
-      const cols = line.split(",").map((c) => c.trim().toLowerCase());
-      headerMap = {};
-      for (let j = 0; j < cols.length; j++) {
-        const col = cols[j]!;
-        if (col.includes("mac")) headerMap["mac"] = j;
-        else if (col.includes("ip") || col.includes("address")) headerMap["ip"] = j;
-        else if (col.includes("host") || col.includes("name")) headerMap["hostname"] = j;
-        else if (col.includes("interface") || col.includes("iface")) headerMap["interface"] = j;
-        else if (col.includes("status") || col.includes("state")) headerMap["status"] = j;
-      }
-      startIdx = i + 1;
-      break;
-    }
-  }
+  const detected = detectCsvHeader(lines);
+  const headerMap = detected?.headerMap ?? null;
+  const startIdx = detected?.startIdx ?? 0;
 
   for (let i = startIdx; i < lines.length; i++) {
-    const line = lines[i]!;
-
-    // Skip non-data lines
+    const line = lines[i] ?? "";
     if (line.startsWith("---") || line.startsWith("Router") || line.startsWith("show ")) continue;
 
     const parts = line.split(",").map((p) => p.trim());
     if (parts.length < 2) continue;
 
-    if (headerMap) {
-      // Use header-mapped columns
-      const mac = parts[headerMap["mac"] ?? 0] ?? "";
-      const ip = parts[headerMap["ip"] ?? 1] ?? "";
-      if (!mac || !ip) continue;
-
-      results.push({
-        mac,
-        ip,
-        hostname: parts[headerMap["hostname"] ?? 2] ?? "",
-        interface: parts[headerMap["interface"] ?? 3] ?? "",
-        status: parts[headerMap["status"] ?? 4] ?? "",
-      });
-    } else {
-      // No header — heuristic: detect MAC and IP in first two columns
-      const [first, second, ...rest] = parts;
-      if (!first || !second) continue;
-
-      let mac = "", ip = "", hostname = "";
-      if (MAC_RE.test(first) && IP_RE.test(second)) {
-        mac = first;
-        ip = second;
-        hostname = rest[0] ?? "";
-      } else if (IP_RE.test(first) && MAC_RE.test(second)) {
-        ip = first;
-        mac = second;
-        hostname = rest[0] ?? "";
-      } else {
-        continue; // Can't identify fields
-      }
-
-      results.push({
-        mac,
-        ip,
-        hostname,
-        interface: rest[1] ?? "",
-        status: rest[2] ?? "",
-      });
-    }
+    const row = headerMap ? parseMappedCsvRow(parts, headerMap) : parseHeuristicCsvRow(parts);
+    if (row) results.push(row);
   }
 
   return results;
+}
+
+/** Skip preamble until a table header or separator is found. */
+function isTableDataStart(line: string): boolean {
+  return (/mac|address/i.test(line) && /ip|address/i.test(line)) || SEPARATOR_RE.test(line);
+}
+
+/** Parse one space-delimited table row into a reservation. */
+function parseTableRow(line: string): DhcpReservation | null {
+  if (SEPARATOR_RE.test(line)) return null;
+
+  const parts = line.split(/\s+/);
+  if (parts.length < 2) return null;
+
+  const [first, second, ...rest] = parts;
+  if (!first || !second) return null;
+
+  const ids = identifyMacIpLoose(first, second);
+  if (!ids) return null;
+
+  return {
+    mac: ids.mac,
+    ip: ids.ip,
+    hostname: rest[0] ?? "",
+    interface: rest[1] ?? "",
+    status: rest.slice(2).join(" "),
+  };
 }
 
 /**
@@ -116,43 +158,12 @@ export function parseDhcpReservationsTable(raw: string): DhcpReservation[] {
   let dataStarted = false;
   for (const line of lines) {
     if (!dataStarted) {
-      if (/mac|address/i.test(line) && /ip|address/i.test(line)) {
-        dataStarted = true;
-        continue;
-      }
-      if (/^-{3,}/.test(line)) {
-        dataStarted = true;
-        continue;
-      }
+      if (isTableDataStart(line)) dataStarted = true;
       continue;
     }
 
-    if (/^-{3,}/.test(line)) continue;
-
-    const parts = line.split(/\s+/);
-    if (parts.length < 2) continue;
-
-    const [first, second, ...rest] = parts;
-    if (!first || !second) continue;
-
-    let mac = "", ip = "";
-    if (MAC_RE.test(first)) {
-      mac = first;
-      ip = second;
-    } else if (IP_RE.test(first)) {
-      ip = first;
-      mac = second;
-    } else {
-      continue;
-    }
-
-    results.push({
-      mac,
-      ip,
-      hostname: rest[0] ?? "",
-      interface: rest[1] ?? "",
-      status: rest.slice(2).join(" "),
-    });
+    const row = parseTableRow(line);
+    if (row) results.push(row);
   }
 
   return results;
