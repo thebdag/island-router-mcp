@@ -172,6 +172,91 @@ export interface SpeedtestEntry {
   comment: string;
 }
 
+const SPEEDTEST_SEP_RE = /^[-=]{3,}/;
+
+/** True when a line marks the start of a speedtest table body. */
+function isSpeedtestTableStart(line: string): boolean {
+  return (/download|upload/i.test(line) && /date|time|latency/i.test(line))
+    || SPEEDTEST_SEP_RE.test(line);
+}
+
+/** Parse table-formatted speedtest output. */
+function parseSpeedtestTable(lines: string[]): SpeedtestEntry[] {
+  const results: SpeedtestEntry[] = [];
+  let dataStarted = false;
+
+  for (const line of lines) {
+    if (!dataStarted) {
+      if (isSpeedtestTableStart(line)) dataStarted = true;
+      continue;
+    }
+    if (SPEEDTEST_SEP_RE.test(line)) continue;
+    const entry = parseSpeedtestLine(line);
+    if (entry) results.push(entry);
+  }
+
+  return results;
+}
+
+/** Apply one key-value speedtest field to the current partial entry. */
+function applySpeedtestKvField(current: Partial<SpeedtestEntry>, line: string): boolean {
+  const dlMatch = /download[:\s]+([0-9.]+)\s*(?:mbps|mb\/s|mbit)/i.exec(line);
+  if (dlMatch) {
+    current.download = Number.parseFloat(dlMatch[1] ?? "0");
+    return true;
+  }
+
+  const ulMatch = /upload[:\s]+([0-9.]+)\s*(?:mbps|mb\/s|mbit)/i.exec(line);
+  if (ulMatch) {
+    current.upload = Number.parseFloat(ulMatch[1] ?? "0");
+    return true;
+  }
+
+  const latMatch = /latency[:\s]+([0-9.]+)\s*(?:ms)?/i.exec(line);
+  if (latMatch) {
+    current.latency = Number.parseFloat(latMatch[1] ?? "0");
+    return true;
+  }
+
+  const serverMatch = /server[:\s]+(.+)/i.exec(line);
+  if (serverMatch) {
+    current.server = serverMatch[1]?.trim() ?? "";
+    return true;
+  }
+
+  const commentMatch = /comment[:\s]+(.+)/i.exec(line);
+  if (commentMatch) {
+    current.comment = commentMatch[1]?.trim() ?? "";
+    return true;
+  }
+
+  return false;
+}
+
+/** Parse key-value formatted speedtest output. */
+function parseSpeedtestKeyValue(lines: string[]): SpeedtestEntry[] {
+  const results: SpeedtestEntry[] = [];
+  let current: Partial<SpeedtestEntry> = {};
+
+  for (const line of lines) {
+    const dateMatch = /^(\d{4}[/-]\d{2}[/-]\d{2}\s+\d{2}:\d{2}(?::\d{2})?)/.exec(line);
+    if (dateMatch) {
+      if (current.download !== undefined || current.upload !== undefined) {
+        results.push(finalizeSpeedtest(current));
+      }
+      current = { timestamp: dateMatch[1] ?? "" };
+      continue;
+    }
+    applySpeedtestKvField(current, line);
+  }
+
+  if (current.download !== undefined || current.upload !== undefined) {
+    results.push(finalizeSpeedtest(current));
+  }
+
+  return results;
+}
+
 /**
  * Parse `show speedtest` output.
  *
@@ -188,83 +273,8 @@ export interface SpeedtestEntry {
  */
 export function parseSpeedtest(raw: string): SpeedtestEntry[] {
   const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
-  const results: SpeedtestEntry[] = [];
-
-  // Detect table vs key-value format
   const isTable = lines.some((l) => /download\s+upload/i.test(l) || /date.*time.*download/i.test(l));
-
-  if (isTable) {
-    let dataStarted = false;
-    for (const line of lines) {
-      if (!dataStarted) {
-        if (/download|upload/i.test(line) && /date|time|latency/i.test(line)) {
-          dataStarted = true;
-          continue;
-        }
-        if (/^[-=]{3,}/.test(line)) {
-          dataStarted = true;
-          continue;
-        }
-        continue;
-      }
-
-      if (/^[-=]{3,}/.test(line)) continue;
-
-      // Extract numeric values from the line
-      const entry = parseSpeedtestLine(line);
-      if (entry) results.push(entry);
-    }
-  } else {
-    // Key-value format — accumulate into entries
-    let current: Partial<SpeedtestEntry> = {};
-
-    for (const line of lines) {
-      const dlMatch = /download[:\s]+([0-9.]+)\s*(?:mbps|mb\/s|mbit)/i.exec(line);
-      if (dlMatch) {
-        current.download = Number.parseFloat(dlMatch[1] ?? "0");
-        continue;
-      }
-
-      const ulMatch = /upload[:\s]+([0-9.]+)\s*(?:mbps|mb\/s|mbit)/i.exec(line);
-      if (ulMatch) {
-        current.upload = Number.parseFloat(ulMatch[1] ?? "0");
-        continue;
-      }
-
-      const latMatch = /latency[:\s]+([0-9.]+)\s*(?:ms)?/i.exec(line);
-      if (latMatch) {
-        current.latency = Number.parseFloat(latMatch[1] ?? "0");
-        continue;
-      }
-
-      const dateMatch = /^(\d{4}[/-]\d{2}[/-]\d{2}\s+\d{2}:\d{2}(?::\d{2})?)/.exec(line);
-      if (dateMatch) {
-        // New entry starting with a date — push previous if non-empty
-        if (current.download !== undefined || current.upload !== undefined) {
-          results.push(finalizeSpeedtest(current));
-        }
-        current = { timestamp: dateMatch[1] ?? "" };
-        continue;
-      }
-
-      const serverMatch = /server[:\s]+(.+)/i.exec(line);
-      if (serverMatch) {
-        current.server = serverMatch[1]?.trim() ?? "";
-      }
-
-      const commentMatch = /comment[:\s]+(.+)/i.exec(line);
-      if (commentMatch) {
-        current.comment = commentMatch[1]?.trim() ?? "";
-      }
-    }
-
-    // Push last accumulated entry
-    if (current.download !== undefined || current.upload !== undefined) {
-      results.push(finalizeSpeedtest(current));
-    }
-  }
-
-  return results;
+  return isTable ? parseSpeedtestTable(lines) : parseSpeedtestKeyValue(lines);
 }
 
 /** Try to parse a table-format speedtest line. */

@@ -32,6 +32,17 @@ export interface NtpAssociation {
   tally: string;  // *, +, -, etc.
 }
 
+const SEPARATOR_RE = /^[=-]{3,}/;
+
+/** Add a server address to the config if it is a real value. */
+function addServer(config: NtpConfig, server: string): void {
+  const cleaned = server.replace(",", "");
+  if (cleaned === "none" || cleaned === "not" || cleaned === "configured") return;
+  if (config.servers.includes(cleaned)) return;
+  config.servers.push(cleaned);
+  config.enabled = true;
+}
+
 /**
  * Parse `show ntp` output — NTP server configuration.
  *
@@ -52,23 +63,60 @@ export function parseNtpConfig(raw: string): NtpConfig {
   for (const line of lines) {
     // Match "ntp server <address>" or "NTP server: <address>"
     const serverMatch = /(?:ntp\s+)?server[:\s]+(\S+)/i.exec(line);
-    if (serverMatch && serverMatch[1]) {
-      const server = serverMatch[1].replace(",", "");
-      if (server !== "none" && server !== "not" && server !== "configured") {
-        config.servers.push(server);
-        config.enabled = true;
-      }
+    if (serverMatch?.[1]) {
+      addServer(config, serverMatch[1]);
     }
 
     // Also match bare addresses on "server" lines
     const bareMatch = /^server\s+(\S+)/i.exec(line);
-    if (bareMatch && bareMatch[1] && !config.servers.includes(bareMatch[1])) {
-      config.servers.push(bareMatch[1]);
-      config.enabled = true;
+    if (bareMatch?.[1]) {
+      addServer(config, bareMatch[1]);
     }
   }
 
   return config;
+}
+
+/** Apply a single regex capture as an integer field on status. */
+function applyIntField(status: NtpStatus, line: string, re: RegExp, key: "stratum"): void {
+  const m = re.exec(line);
+  if (m) status[key] = Number.parseInt(m[1] ?? "0", 10);
+}
+
+/** Apply a single regex capture as a float field on status. */
+function applyFloatField(
+  status: NtpStatus,
+  line: string,
+  re: RegExp,
+  key: "offset" | "jitter" | "rootDelay",
+): void {
+  const m = re.exec(line);
+  if (m) status[key] = Number.parseFloat(m[1] ?? "0");
+}
+
+/** Apply a single regex capture as a string field on status. */
+function applyStringField(
+  status: NtpStatus,
+  line: string,
+  re: RegExp,
+  key: "refId" | "precision" | "pollInterval",
+): void {
+  const m = re.exec(line);
+  if (m) status[key] = (m[1] ?? "").trim();
+}
+
+/** Update synchronization flags from a status line. */
+function applySyncLine(status: NtpStatus, line: string): void {
+  if (/synch?ronized|sync\s+status/i.test(line)) {
+    status.synchronized = /yes|true|synch?ronized/i.test(line) && !/not\s+synch?ronized|unsync/i.test(line);
+  }
+}
+
+/** Infer synchronized from a valid stratum value. */
+function inferSyncFromStratum(status: NtpStatus): void {
+  if (status.stratum !== null && status.stratum > 0 && status.stratum < 16) {
+    status.synchronized = true;
+  }
 }
 
 /**
@@ -100,65 +148,48 @@ export function parseNtpStatus(raw: string): NtpStatus {
     pollInterval: "",
   };
 
-  const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
-
-  for (const line of lines) {
-    const lower = line.toLowerCase();
-
-    // Synchronization status
-    if (/synch?ronized|sync\s+status/i.test(line)) {
-      status.synchronized = /yes|true|synch?ronized/i.test(line) && !/not\s+synch?ronized|unsync/i.test(line);
-    }
-
-    // Stratum
-    const stratumMatch = /stratum[:\s]+(\d+)/i.exec(line);
-    if (stratumMatch) {
-      status.stratum = Number.parseInt(stratumMatch[1] ?? "0", 10);
-    }
-
-    // Reference ID
-    const refMatch = /ref(?:erence)?\s*id[:\s]+(\S+)/i.exec(line);
-    if (refMatch) {
-      status.refId = refMatch[1] ?? "";
-    }
-
-    // Offset
-    const offsetMatch = /offset[:\s]+([+-]?[0-9.]+)/i.exec(line);
-    if (offsetMatch) {
-      status.offset = Number.parseFloat(offsetMatch[1] ?? "0");
-    }
-
-    // Jitter
-    const jitterMatch = /jitter[:\s]+([0-9.]+)/i.exec(line);
-    if (jitterMatch) {
-      status.jitter = Number.parseFloat(jitterMatch[1] ?? "0");
-    }
-
-    // Root delay
-    const delayMatch = /root\s+delay[:\s]+([0-9.]+)/i.exec(line);
-    if (delayMatch) {
-      status.rootDelay = Number.parseFloat(delayMatch[1] ?? "0");
-    }
-
-    // Precision
-    const precMatch = /precision[:\s]+(\S+)/i.exec(line);
-    if (precMatch) {
-      status.precision = precMatch[1] ?? "";
-    }
-
-    // Poll interval
-    const pollMatch = /poll\s+interval[:\s]+(.+)/i.exec(line);
-    if (pollMatch) {
-      status.pollInterval = (pollMatch[1] ?? "").trim();
-    }
-
-    // Infer synchronization from stratum (stratum > 0 means synchronized)
-    if (status.stratum !== null && status.stratum > 0 && status.stratum < 16) {
-      status.synchronized = true;
-    }
+  for (const line of raw.split("\n").map((l) => l.trim()).filter(Boolean)) {
+    applySyncLine(status, line);
+    applyIntField(status, line, /stratum[:\s]+(\d+)/i, "stratum");
+    applyStringField(status, line, /ref(?:erence)?\s*id[:\s]+(\S+)/i, "refId");
+    applyFloatField(status, line, /offset[:\s]+([+-]?[0-9.]+)/i, "offset");
+    applyFloatField(status, line, /jitter[:\s]+([0-9.]+)/i, "jitter");
+    applyFloatField(status, line, /root\s+delay[:\s]+([0-9.]+)/i, "rootDelay");
+    applyStringField(status, line, /precision[:\s]+(\S+)/i, "precision");
+    applyStringField(status, line, /poll\s+interval[:\s]+(.+)/i, "pollInterval");
+    inferSyncFromStratum(status);
   }
 
   return status;
+}
+
+/** Parse a single ntpq-style association/peer line. */
+function parseAssociationLine(line: string): NtpAssociation | null {
+  if (SEPARATOR_RE.test(line)) return null;
+
+  let tally = "";
+  let rest = line;
+  if (/^[*+\-#ox. ]/.test(line) && !/^\d/.test(line)) {
+    tally = line[0] ?? "";
+    rest = line.slice(1).trim();
+  }
+
+  const parts = rest.split(/\s+/);
+  if (parts.length < 8) return null;
+
+  return {
+    remote: parts[0] ?? "",
+    refid: parts[1] ?? "",
+    stratum: parts[2] ? Number.parseInt(parts[2], 10) : null,
+    type: parts[3] ?? "",
+    when: parts[4] ?? "",
+    poll: parts[5] ?? "",
+    reach: parts[6] ?? "",
+    delay: parts[7] ? Number.parseFloat(parts[7]) : null,
+    offset: parts[8] ? Number.parseFloat(parts[8]) : null,
+    jitter: parts[9] ? Number.parseFloat(parts[9]) : null,
+    tally,
+  };
 }
 
 /**
@@ -177,39 +208,14 @@ export function parseNtpAssociations(raw: string): NtpAssociation[] {
   let dataStarted = false;
   for (const line of lines) {
     if (!dataStarted) {
-      if (/^[=\-]{3,}/.test(line) || /remote\s+refid/i.test(line)) {
+      if (SEPARATOR_RE.test(line) || /remote\s+refid/i.test(line)) {
         dataStarted = true;
-        continue;
       }
       continue;
     }
 
-    if (/^[=\-]{3,}/.test(line)) continue;
-
-    // Parse peer line — first char is tally code (*, +, -, #, space, etc.)
-    let tally = "";
-    let rest = line;
-    if (/^[*+\-#ox. ]/.test(line) && !/^\d/.test(line)) {
-      tally = line[0] ?? "";
-      rest = line.slice(1).trim();
-    }
-
-    const parts = rest.split(/\s+/);
-    if (parts.length < 8) continue;
-
-    results.push({
-      remote: parts[0] ?? "",
-      refid: parts[1] ?? "",
-      stratum: parts[2] ? Number.parseInt(parts[2], 10) : null,
-      type: parts[3] ?? "",
-      when: parts[4] ?? "",
-      poll: parts[5] ?? "",
-      reach: parts[6] ?? "",
-      delay: parts[7] ? Number.parseFloat(parts[7]) : null,
-      offset: parts[8] ? Number.parseFloat(parts[8]) : null,
-      jitter: parts[9] ? Number.parseFloat(parts[9]) : null,
-      tally,
-    });
+    const assoc = parseAssociationLine(line);
+    if (assoc) results.push(assoc);
   }
 
   return results;

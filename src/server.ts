@@ -280,13 +280,11 @@ async function querySpeedtest(dev: DeviceConfig): Promise<QueryResult> {
   return text({ device_id: dev.id, count: parsed.length, speedtest_results: parsed });
 }
 
-async function queryHistory(dev: DeviceConfig, time?: string): Promise<QueryResult> {
-  // Default to last 1 hour, JSON format
-  const timeRange = time ?? "1h";
-  validateSafe(timeRange, "time");
-  const cmd = `show history begin ${timeRange} first json:`;
+async function queryHistory(dev: DeviceConfig, time = "1h"): Promise<QueryResult> {
+  validateSafe(time, "time");
+  const cmd = `show history begin ${time} first json:`;
   const output = await withSession(dev, (s) => runCommand(s, cmd, 5000));
-  return text({ device_id: dev.id, command: cmd, time_range: timeRange, output });
+  return text({ device_id: dev.id, command: cmd, time_range: time, output });
 }
 
 async function queryConfigDiff(dev: DeviceConfig): Promise<QueryResult> {
@@ -615,7 +613,7 @@ server.tool(
       case "vpns":               return queryVpns(dev);
       case "dhcp_reservations":  return queryDhcpReservations(dev);
       case "speedtest":          return querySpeedtest(dev);
-      case "history":            return queryHistory(dev, time);
+      case "history":            return queryHistory(dev, time ?? "1h");
       case "ntp":                return queryNtp(dev);
       case "dns_redirects":     return queryDnsRedirects(dev);
       case "command": {
@@ -648,8 +646,7 @@ const ConfigureActions = z.enum([
   "remove_dns_redirect", // Remove DNS redirect (domain)
 ]);
 
-/** Dispatch a configure action — extracted to keep cognitive complexity low. */
-async function dispatchConfigure(params: {
+type ConfigureParams = {
   device_id: string;
   action: string;
   mac?: string;
@@ -666,58 +663,39 @@ async function dispatchConfigure(params: {
   led_level?: number;
   timezone?: string;
   ntp_server?: string;
-}): Promise<QueryResult> {
-  const dev = getDeviceOrThrow(params.device_id);
+};
 
-  switch (params.action) {
-    case "add_dhcp": {
-      if (!params.mac) throw new Error("'mac' required for add_dhcp");
-      if (!params.ip) throw new Error("'ip' required for add_dhcp");
-      return configAddDhcp(dev, params.mac, params.ip, params.hostname);
-    }
-    case "remove_dhcp": {
-      if (!params.mac) throw new Error("'mac' required for remove_dhcp");
-      return configRemoveDhcp(dev, params.mac);
-    }
-    case "set_syslog": {
-      if (!params.server_ip) throw new Error("'server_ip' required for set_syslog");
-      return configSyslog(dev, params.server_ip, params.port, params.level, params.protocol);
-    }
-    case "remove_syslog": {
-      return configRemoveSyslog(dev);
-    }
-    case "set_hostname": {
-      if (!params.hostname) throw new Error("'hostname' required for set_hostname");
-      return configHostname(dev, params.hostname);
-    }
-    case "set_auto_update": {
-      if (!params.days) throw new Error("'days' required for set_auto_update");
-      return configAutoUpdate(dev, params.days, params.time_str);
-    }
-    case "set_led": {
-      if (params.led_level === undefined) throw new Error("'led_level' required for set_led");
-      return configLed(dev, params.led_level);
-    }
-    case "set_timezone": {
-      if (!params.timezone) throw new Error("'timezone' required for set_timezone");
-      return configTimezone(dev, params.timezone);
-    }
-    case "set_ntp": {
-      if (!params.ntp_server) throw new Error("'ntp_server' required for set_ntp");
-      return configNtp(dev, params.ntp_server);
-    }
-    case "add_dns_redirect": {
-      if (!params.domain) throw new Error("'domain' required for add_dns_redirect");
-      if (!params.redirect_server) throw new Error("'redirect_server' required for add_dns_redirect (use '0.0.0.0' to block/sinkhole)");
-      return configAddDnsRedirect(dev, params.domain, params.redirect_server);
-    }
-    case "remove_dns_redirect": {
-      if (!params.domain) throw new Error("'domain' required for remove_dns_redirect");
-      return configRemoveDnsRedirect(dev, params.domain);
-    }
-    default:
-      throw new Error(`Unknown configure action: '${params.action}'`);
-  }
+function requireParam(value: string | undefined, name: string): string {
+  if (!value) throw new Error(`'${name}' required`);
+  return value;
+}
+
+const configureHandlers: Record<string, (dev: DeviceConfig, p: ConfigureParams) => Promise<QueryResult>> = {
+  add_dhcp: (dev, p) => configAddDhcp(dev, requireParam(p.mac, "mac"), requireParam(p.ip, "ip"), p.hostname),
+  remove_dhcp: (dev, p) => configRemoveDhcp(dev, requireParam(p.mac, "mac")),
+  set_syslog: (dev, p) => configSyslog(dev, requireParam(p.server_ip, "server_ip"), p.port, p.level, p.protocol),
+  remove_syslog: (dev) => configRemoveSyslog(dev),
+  set_hostname: (dev, p) => configHostname(dev, requireParam(p.hostname, "hostname")),
+  set_auto_update: (dev, p) => configAutoUpdate(dev, requireParam(p.days, "days"), p.time_str),
+  set_led: (dev, p) => {
+    if (p.led_level === undefined) throw new Error("'led_level' required for set_led");
+    return configLed(dev, p.led_level);
+  },
+  set_timezone: (dev, p) => configTimezone(dev, requireParam(p.timezone, "timezone")),
+  set_ntp: (dev, p) => configNtp(dev, requireParam(p.ntp_server, "ntp_server")),
+  add_dns_redirect: (dev, p) => {
+    if (!p.domain) throw new Error("'domain' required for add_dns_redirect");
+    if (!p.redirect_server) throw new Error("'redirect_server' required for add_dns_redirect (use '0.0.0.0' to block/sinkhole)");
+    return configAddDnsRedirect(dev, p.domain, p.redirect_server);
+  },
+  remove_dns_redirect: (dev, p) => configRemoveDnsRedirect(dev, requireParam(p.domain, "domain")),
+};
+
+/** Dispatch a configure action — handler map keeps cognitive complexity low. */
+async function dispatchConfigure(params: ConfigureParams): Promise<QueryResult> {
+  const handler = configureHandlers[params.action];
+  if (!handler) throw new Error(`Unknown configure action: '${params.action}'`);
+  return handler(getDeviceOrThrow(params.device_id), params);
 }
 
 server.tool(
