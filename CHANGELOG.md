@@ -6,6 +6,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ---
 
+## [0.4.0] — 2026-07-14
+
+### Added
+- **`island-axi` CLI** — AXI-compliant ([axi.md](https://axi.md/)) agent-facing shell interface with TOON output via `axi-sdk-js`
+  - Content-first home view (device inventory + contextual `help[]`)
+  - Commands: `devices`, `status`, `interfaces`, `neighbors`, `routes`, `logs`, `config`, `config-diff`, `vpns`, `dhcp`, `ntp`, `dns-redirects`, `ping`, `show`, `configure`, `setup`
+  - Minimal default schemas, `--fields`, `--limit`, `--full` truncation escape hatch
+  - Structured errors on stdout; unknown flags fail loud
+  - `configure … --confirm` for non-interactive mutations
+  - `setup hooks` for Claude Code / Codex / OpenCode SessionStart ambient context
+- **Skills**: `skills/island-axi/SKILL.md` + `.agent/skills/island-axi`, plus vendored `.agent/skills/axi` design guide
+- Shared `src/devices.ts` inventory loader used by MCP server and CLI
+- Unit tests (`vitest`) for flag parsing, home view, and allowlist helpers
+
+### Changed
+- Bumped server version to `0.4.0`
+- `package.json` exposes `island-axi` bin alongside `island-mcp-server`
+
+---
+
 ## [0.3.0] — 2026-04-03
 
 ### Added

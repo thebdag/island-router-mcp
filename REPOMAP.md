@@ -4,10 +4,11 @@
 
 ## Project
 
-**island-router-mcp** — An MCP server that exposes Island Router CLI operations as structured tools for AI assistants. Unofficial, not affiliated with Island Technology Inc.
+**island-router-mcp** — An MCP server **and** AXI CLI (`island-axi`) that expose Island Router CLI operations for AI assistants. Unofficial, not affiliated with Island Technology Inc.
 
-**Stack:** TypeScript · Node.js 20+ · ESM · ssh2 · Zod · MCP SDK
+**Stack:** TypeScript · Node.js 20+ · ESM · ssh2 · Zod · MCP SDK · axi-sdk-js
 **CLI Reference:** Aligned with official Island Router CLI Reference Guide (firmware 2.3.2, 260 pages)
+**AXI:** Agent ergonomics per [axi.md](https://axi.md/) — TOON output, content-first, contextual help
 
 ## Directory Structure
 
@@ -15,6 +16,8 @@
 island-router-mcp/                # Workspace root
 ├── .agent/
 │   └── skills/                   # AI-readable skill references
+│       ├── island-axi/           # AXI CLI usage skill
+│       ├── axi/                  # AXI design principles (vendored)
 │       ├── island-router-cli/    # CLI reference (firmware 2.3.2) & discovery tools
 │       │   ├── SKILL.md          # Canonical CLI reference (official guide-aligned)
 │       │   └── scripts/          # CLI discovery tooling
@@ -34,16 +37,25 @@ island-router-mcp/                # Workspace root
 │       ├── skill-firmware-differ/  # Firmware upgrade planner
 │       └── skill-knowledge-harvester/  # Conversation → KI extractor
 │
+├── skills/
+│   └── island-axi/               # Installable Agent Skill (AXI secondary path)
+│       └── SKILL.md
+│
 ├── src/                          # TypeScript source
-│   ├── server.ts                 # MCP server entrypoint — 3 meta-tools (14 query + 9 configure actions)
+│   ├── server.ts                 # MCP server entrypoint — 3 meta-tools
+│   ├── devices.ts                # Shared device inventory loader
 │   ├── islandSsh.ts              # SSH client (interactive shell via ssh2)
+│   ├── cli/                      # island-axi (AXI CLI)
+│   │   ├── island-axi.ts         # CLI entrypoint (axi-sdk-js)
+│   │   ├── home.ts / help.ts / args.ts / format.ts / session.ts
+│   │   └── commands/             # status, neighbors, configure, setup, …
 │   └── parsers/                  # CLI output → structured JSON
 │       ├── interfaces.ts         # show interface / show interface summary
 │       ├── routes.ts             # show ip routes / show ip neighbors
 │       └── logs.ts               # show log / show syslog
 │
 ├── build/                        # Compiled JS output (git-ignored)
-├── package.json                  # ESM project config
+├── package.json                  # ESM project config (bins: island-mcp-server, island-axi)
 ├── tsconfig.json                 # TypeScript compiler settings
 ├── devices.example.json          # Template device inventory
 ├── devices.json                  # Real device config (git-ignored)
@@ -58,10 +70,13 @@ island-router-mcp/                # Workspace root
 
 | File | Purpose | Entry Point? |
 | --- | --- | --- |
-| `src/server.ts` | MCP server — 3 meta-tools with 14 query actions and 9 configure actions | ✅ `node build/server.js` |
+| `src/server.ts` | MCP server — 3 meta-tools with query + configure actions | ✅ `node build/server.js` |
+| `src/cli/island-axi.ts` | AXI CLI — TOON output, content-first home, setup hooks | ✅ `node build/cli/island-axi.js` / `island-axi` |
+| `src/devices.ts` | Shared inventory loader for MCP + CLI | |
 | `src/islandSsh.ts` | SSH session management — `openSession()`, `runCommand()`, `closeSession()` | |
 | `src/parsers/*.ts` | Transform raw CLI text into typed objects | |
 | `devices.json` | Runtime device inventory (not committed) | |
+| `skills/island-axi/SKILL.md` | Installable Agent Skill for island-axi | |
 | `.agent/skills/island-router-cli/SKILL.md` | Canonical CLI reference — aligned with official 260-page guide (fw 2.3.2) | |
 | `.agent/skills/island-router-cli/scripts/cli_discovery_results.json` | Full command tree (3,136 commands) — structured JSON | |
 | `.agent/skills/island-router-cli/scripts/cli_discovery.py` | Recursive CLI crawler for re-running discovery | |
@@ -71,6 +86,8 @@ island-router-mcp/                # Workspace root
 
 | Skill | Domain | Purpose |
 |---|---|---|
+| `island-axi` | Networking / AXI | Agent-first Island Router CLI (TOON, hooks, configure --confirm) |
+| `axi` | Standards | AXI 10 principles for agent-ergonomic CLIs |
 | `island-router-cli` | Networking | CLI reference for Island Router fw 2.3.2 — 2-context model (Global + Interface), history ETL, VPN, SNMP, DNS-over-HTTPS, syslog (numeric levels 0-7) |
 | `skill-mcp-builder` | Development | Build MCP servers (TypeScript, Zod schemas, meta-tool patterns) |
 | `skill-observability-pipeline` | DevOps | Syslog → Promtail → Loki → Grafana pipeline setup |
@@ -139,4 +156,6 @@ npm install          # Install dependencies
 npm run build        # Compile TypeScript → build/
 npm run watch        # Compile in watch mode
 npm start            # Run the MCP server
+npm test             # Unit tests (vitest)
+node build/cli/island-axi.js   # AXI CLI home view
 ```

@@ -19,11 +19,14 @@ Development conventions for the Island Router MCP Server.
 ```
 src/
   server.ts           # Tool registration only — dispatch to handler functions
+  devices.ts          # Shared device inventory loader (MCP + CLI)
   islandSsh.ts        # SSH session lifecycle — no business logic
+  cli/                # island-axi AXI CLI (axi-sdk-js, TOON stdout)
   parsers/            # One file per CLI output domain — pure functions, no I/O
 ```
 
 - **server.ts** should contain tool registration and action dispatch only. Handler logic lives in standalone `async` functions above the tool definitions.
+- **cli/** implements the agent-facing shell surface; keep AXI principles (TOON via SDK, content-first home, structured errors, `--confirm` mutations).
 - **Parsers** are pure functions: `(raw: string) => StructuredType[]`. They must not import SSH modules or perform I/O.
 - **islandSsh.ts** handles connection, command execution, and output cleaning. It should not import parsers or server code.
 

@@ -25,6 +25,7 @@ import {
   type DeviceConfig,
   type ShellSession,
 } from "./islandSsh.js";
+import { getDeviceOrThrow as lookupDevice, loadDevices } from "./devices.js";
 
 import { parseInterfaceSummary, parseInterfaceDetail } from "./parsers/interfaces.js";
 import { parseRoutes, parseNeighbors } from "./parsers/routes.js";
@@ -38,33 +39,15 @@ import { parseDnsRedirects } from "./parsers/dnsRedirects.js";
 // ─── Device inventory ────────────────────────────────────────────────────────
 
 const inventoryPath = process.env["ISLAND_DEVICE_INVENTORY"] ?? "devices.json";
-
-let devices: DeviceConfig[];
-try {
-  devices = JSON.parse(fs.readFileSync(inventoryPath, "utf8"));
-} catch {
-  devices = [
-    {
-      id: process.env["ISLAND_DEVICE_ID"] ?? "island-default",
-      host: process.env["ROUTER_IP"] ?? process.env["ROUTER_HOST"] ?? "192.168.2.1", // NOSONAR
-      port: Number.parseInt(process.env["ROUTER_PORT"] ?? "22", 10),
-      username: process.env["ROUTER_USER"] ?? "admin",
-      authMethod: "password" as const,
-      description: "Default Island Router (from env)",
-    },
-  ];
+const devices: DeviceConfig[] = loadDevices(inventoryPath);
+if (!fs.existsSync(inventoryPath)) {
   process.stderr.write(
     `[island-mcp] No devices.json at '${inventoryPath}', using env-based default\n`,
   );
 }
 
 function getDeviceOrThrow(deviceId: string): DeviceConfig {
-  const dev = devices.find((d) => d.id === deviceId);
-  if (!dev) {
-    const available = devices.map((d) => d.id).join(", ");
-    throw new Error(`Unknown device_id '${deviceId}'. Available: ${available}`);
-  }
-  return dev;
+  return lookupDevice(devices, deviceId);
 }
 
 // ─── Allowlisted show commands ───────────────────────────────────────────────
@@ -552,7 +535,7 @@ function text(obj: unknown): QueryResult {
 
 const server = new McpServer({
   name: "island-router-mcp",
-  version: "0.3.0",
+  version: "0.4.0",
 });
 
 // ─── Tool 1: island_list_devices ─────────────────────────────────────────────
@@ -742,7 +725,7 @@ server.tool(
 // ═════════════════════════════════════════════════════════════════════════════
 
 process.stderr.write(
-  `[island-mcp] Starting v0.3.0 (meta-tool) with ${devices.length} device(s)\n`,
+  `[island-mcp] Starting v0.4.0 (meta-tool + island-axi) with ${devices.length} device(s)\n`,
 );
 const transport = new StdioServerTransport();
 await server.connect(transport);
