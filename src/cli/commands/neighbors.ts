@@ -1,12 +1,12 @@
-import { parseNeighbors } from "../../parsers/routes.js";
 import { parseLimit } from "../args.js";
 import { parseFieldsFlag, pickFields } from "../format.js";
 import {
+  callCore,
   deviceFromContext,
   parseDeviceArgs,
-  runShow,
   type CliContext,
 } from "../session.js";
+import { queryNeighbors } from "../../core/query.js";
 
 const DEFAULT_FIELDS = ["ip", "mac", "interface", "state"];
 
@@ -23,8 +23,8 @@ export async function neighborsCommand(
   const fields = parseFieldsFlag(parsed.flags["fields"], DEFAULT_FIELDS);
   const limit = parseLimit(parsed.flags["limit"], 100, 500);
 
-  const output = await runShow(device, "show ip neighbors", 2000);
-  const neighbors = parseNeighbors(output);
+  const data = await callCore(() => queryNeighbors(device));
+  const neighbors = data.neighbors;
 
   if (neighbors.length === 0) {
     return {

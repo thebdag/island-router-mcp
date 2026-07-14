@@ -29,17 +29,19 @@ island-router-mcp/
 ├── skills/island-axi/        # Installable AXI skill (npx skills add …)
 │
 ├── src/
-│   ├── server.ts             # MCP: 3 meta-tools
+│   ├── core/                 # ★ Shared action core (add capabilities here)
+│   │   ├── query.ts          # dispatchQuery + read handlers
+│   │   ├── configure.ts      # dispatchConfigure + write handlers
+│   │   ├── session.ts / validate.ts / syslog.ts / index.ts
+│   ├── server.ts             # Thin MCP adapter (3 meta-tools)
 │   ├── devices.ts            # Shared inventory
 │   ├── allowedCommands.ts    # Shared show allowlist (edit once)
 │   ├── islandSsh.ts          # SSH interactive shell
-│   ├── cli/                  # island-axi (AXI)
+│   ├── cli/                  # island-axi presentation layer
 │   │   ├── island-axi.ts
 │   │   ├── home.ts, help.ts, args.ts, format.ts, session.ts
-│   │   └── commands/         # One file per noun/command
+│   │   └── commands/         # AXI wrappers around core
 │   └── parsers/              # Pure CLI → typed data
-│       ├── interfaces.ts, routes.ts, logs.ts, dhcp.ts
-│       ├── vpn.ts, ntp.ts, system.ts, dnsRedirects.ts
 │
 ├── test/                     # vitest (no live router required)
 ├── devices.example.json
@@ -52,35 +54,33 @@ island-router-mcp/
 
 | File | Role | Run |
 | --- | --- | --- |
-| `src/server.ts` | MCP meta-tools | `npm start` / `node build/server.js` |
-| `src/cli/island-axi.ts` | AXI CLI | `node build/cli/island-axi.js` |
+| `src/core/` | Shared router actions | imported |
+| `src/cli/island-axi.ts` | AXI CLI (primary for agents) | `node build/cli/island-axi.js` |
+| `src/server.ts` | Thin MCP adapter | `npm start` / `node build/server.js` |
 | `src/devices.ts` | Inventory load | imported |
 | `src/allowedCommands.ts` | Show allowlist | imported |
 | `src/islandSsh.ts` | SSH session | imported |
 | `src/parsers/*.ts` | Output parsers | imported |
 
-## Architecture (dual surface)
+## Architecture (core-first)
 
 ```
 ┌──────────────────────┐     ┌──────────────────────┐
-│ MCP client (stdio)   │     │ Agent shell (AXI)    │
-│ island_query /       │     │ island-axi <cmd>     │
-│ island_configure     │     │ TOON stdout          │
+│ MCP (optional)       │     │ island-axi (primary) │
+│ thin meta-tools      │     │ TOON + help[]        │
 └──────────┬───────────┘     └──────────┬───────────┘
            │                            │
            └────────────┬───────────────┘
                         ▼
-              devices.ts + parsers + allowedCommands
+                   src/core/
+            dispatchQuery / dispatchConfigure
                         │
+         devices · parsers · allowedCommands · islandSsh
                         ▼
-                   islandSsh.ts
-                        │
-                        ▼
-         Island Router (Global + Interface contexts)
-         Config at global prompt · write memory · no conf t
+         Island Router (Global + Interface · no conf t)
 ```
 
-### MCP (v0.4.0)
+### MCP (v0.5.0 thin adapter)
 
 | Tool | Role |
 | --- | --- |
@@ -127,11 +127,12 @@ Index: `.agent/skills/README.md`.
 ## Extend checklist (summary)
 
 1. Parser (if needed) in `src/parsers/`
-2. MCP handler + action enum in `server.ts`
-3. AXI command in `src/cli/commands/` + `island-axi.ts` + `help.ts`
-4. Allowlist only via `src/allowedCommands.ts`
-5. Update `CODING-STANDARDS.md` inventory, `CHANGELOG.md`, skills if UX changed
-6. `npm run build && npm test`
+2. **Core handler** in `src/core/query.ts` or `configure.ts` (+ dispatch)
+3. MCP: action already flows if added to `QUERY_ACTIONS` / `CONFIGURE_ACTIONS`
+4. AXI: presentation command in `src/cli/commands/` + register + `help.ts`
+5. Allowlist only via `src/allowedCommands.ts`
+6. Docs: `CODING-STANDARDS.md`, `CHANGELOG.md`, skills if UX changed
+7. `npm run build && npm test`
 
 See `AGENTS.md` for the full decision tree and definition of done.
 

@@ -13,6 +13,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **Skill discovery**: `.agent/skills/README.md` catalog; `.agents/skills` symlink for Codex/OpenCode-compatible skill roots
 - **Allowlist single source of truth**: `src/allowedCommands.ts` shared by MCP and `island-axi` (removes duplicated lists)
 
+## [0.5.0] — 2026-07-14
+
+### Changed
+- **Core-first architecture**: extracted `src/core/` (`query`, `configure`, `session`, `validate`) as the single source of router actions
+- **MCP is a thin adapter** over `dispatchQuery` / `dispatchConfigure` — prefer `island-axi` for agents
+- **AXI CLI** calls the same core; presentation (TOON fields, help, truncation) stays in `src/cli/`
+- Bumped version to `0.5.0`
+
 ## [0.4.0] — 2026-07-14
 
 ### Added

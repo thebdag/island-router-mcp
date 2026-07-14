@@ -1,6 +1,6 @@
 {
   "name": "island-mcp-server",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "private": true,
   "description": "MCP server and AXI CLI for Island Router — token-efficient agent tooling over SSH",

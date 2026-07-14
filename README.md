@@ -26,11 +26,13 @@ node build/cli/island-axi.js neighbors --device island-edge-1
 island-axi setup hooks                # optional ambient SessionStart context
 ```
 
-Prefer `island-axi` over raw SSH for agent workflows. See skill `island-axi` / `skills/island-axi/SKILL.md`.
+Prefer `island-axi` over raw SSH **and** over MCP for agent shell workflows. See skill `island-axi` / `skills/island-axi/SKILL.md`.
 
-### 🔧 MCP Server
+Both AXI and MCP call the same **`src/core/`** action layer — add router capabilities once there.
 
-A TypeScript server that connects to Island Routers over SSH and exposes their CLI through **3 meta-tools** — designed to minimize token usage while covering all router operations.
+### 🔧 MCP Server (thin adapter)
+
+Optional MCP adapter for hosts that only speak MCP. Same core actions as `island-axi`, exposed as **3 meta-tools**.
 
 #### `island_list_devices`
 

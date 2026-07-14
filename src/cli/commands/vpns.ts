@@ -1,10 +1,10 @@
-import { parseVpnPeers } from "../../parsers/vpn.js";
 import {
+  callCore,
   deviceFromContext,
   parseDeviceArgs,
-  runShow,
   type CliContext,
 } from "../session.js";
+import { queryVpns } from "../../core/query.js";
 
 export async function vpnsCommand(
   args: string[],
@@ -12,10 +12,8 @@ export async function vpnsCommand(
 ): Promise<Record<string, unknown>> {
   const { deviceId } = parseDeviceArgs(args, ["device"], "vpns");
   const device = deviceFromContext(context, deviceId);
-
-  const output = await runShow(device, "show vpns", 2000);
-  const vpn = parseVpnPeers(output);
-  const peers = vpn.peers ?? [];
+  const data = await callCore(() => queryVpns(device));
+  const peers = data.vpn.peers ?? [];
 
   if (peers.length === 0) {
     return {
@@ -38,7 +36,7 @@ export async function vpnsCommand(
     device: device.id,
     count: peers.length,
     peers_online: online,
-    interface: vpn.interfaceName || undefined,
+    interface: data.vpn.interfaceName || undefined,
     peers: rows,
     help: ["Run `island-axi neighbors` for LAN ARP table"],
   };

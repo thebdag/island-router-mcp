@@ -18,19 +18,21 @@ Development conventions for the Island Router MCP Server + `island-axi` CLI.
 
 ```
 src/
-  server.ts             # MCP tool registration + handlers
-  devices.ts            # Shared device inventory loader (MCP + CLI)
-  allowedCommands.ts    # Shared show allowlist (single source of truth)
+  core/                 # ★ Shared router actions (source of truth)
+  server.ts             # Thin MCP adapter — meta-tools only
+  devices.ts            # Shared device inventory loader
+  allowedCommands.ts    # Shared show allowlist
   islandSsh.ts          # SSH session lifecycle — no business logic
-  cli/                  # island-axi AXI CLI (axi-sdk-js, TOON stdout)
-  parsers/              # One file per CLI output domain — pure functions, no I/O
+  cli/                  # island-axi presentation (TOON, help, flags)
+  parsers/              # Pure CLI → typed data
 ```
 
-- **server.ts** — tool registration and action dispatch; handlers as standalone `async` functions.
-- **cli/** — agent-facing shell; AXI principles (TOON via SDK, content-first home, structured errors, `--confirm`).
+- **core/** — implement new router ops here (`dispatchQuery` / `dispatchConfigure`).
+- **server.ts** — MCP schemas + call into core; no SSH/business logic.
+- **cli/** — flag parsing, truncation, `help[]`; call core via `callCore()`.
 - **Parsers** — pure `(raw: string) => StructuredType[]`. No SSH / I/O imports.
-- **islandSsh.ts** — connection + command execution only. No parsers/server imports.
-- **allowedCommands.ts** — edit here only; MCP and AXI both import it (CLI re-exports via `cli/allowedCommands.ts`).
+- **islandSsh.ts** — connection + command execution only.
+- **allowedCommands.ts** — edit here only.
 
 ## Naming Conventions
 
@@ -52,21 +54,23 @@ Every new router capability should land on **both** surfaces unless intentionall
 
 ### Adding a read (query) action
 
-1. Add/extend a parser in `src/parsers/` if output should be structured.
-2. **MCP:** add enum value to `QueryActions`, handler, and `switch` case in `server.ts`.
-3. **AXI:** add `src/cli/commands/<name>.ts`, register in `island-axi.ts`, document in `help.ts` (`COMMAND_HELP` + `TOP_LEVEL_HELP`).
-4. If exposing via raw show: add to `src/allowedCommands.ts` only.
-5. Update this file's inventory tables, `CHANGELOG.md`, and `skills/island-axi` / `.agent/skills/island-axi` if the agent UX changed.
-6. Prefer AXI defaults: 3–4 list fields, `count`, definitive empty string message, `help[]` next steps, truncate large text with `--full`.
+1. Parser in `src/parsers/` if structured.
+2. Handler + `QUERY_ACTIONS` / `dispatchQuery` case in **`src/core/query.ts`**.
+3. MCP picks up the action via `z.enum(QUERY_ACTIONS)` in `server.ts` (no duplicate handler).
+4. AXI: presentation command in `src/cli/commands/`, register in `island-axi.ts` + `help.ts`.
+5. Raw show allowlist: `src/allowedCommands.ts` only.
+6. Update inventories, `CHANGELOG.md`, skills if UX changed.
+7. AXI defaults: 3–4 fields, `count`, definitive empty states, `help[]`, `--full`.
 
 ### Adding a write (configure) action
 
-1. Validate all user inputs **before** opening SSH (`validateMac`, `validateIp`, `validateSafe`, etc.).
-2. **MCP:** `ConfigureActions` + handler; require `confirmation_phrase: "apply_change"`.
-3. **AXI:** `configure <kebab-action>` with required flags + `--confirm` (no prompts).
-4. Issue commands at **global** prompt → `write memory` → verify with a show command.
-5. Prefer idempotent behavior where the router allows it (re-apply same state → success).
-6. Update inventories, changelog, and skills as above.
+1. Validate in **`src/core/validate.ts`** before SSH.
+2. Handler + `CONFIGURE_ACTIONS` / `dispatchConfigure` in **`src/core/configure.ts`**.
+3. MCP: confirmation_phrase only in `server.ts`; dispatch into core.
+4. AXI: `configure <kebab-action>` flags + `--confirm`, map to snake_case core action.
+5. Global prompt → `write memory` → verify show.
+6. Prefer idempotent re-apply → success where the router allows it.
+7. Update inventories, changelog, skills as above.
 
 ### AXI CLI checklist ([axi.md](https://axi.md/))
 
@@ -88,15 +92,16 @@ Tools are consolidated into as few MCP tool definitions as possible to reduce to
 3. **`island_configure`** — all write operations, dispatched by `action` enum, guarded.
 
 When adding a new operation:
-- **Read-only?** Add a new action to `QueryActions` enum and a handler function.
-- **Write?** Add a new action to `ConfigureActions` enum and a handler function.
-- **Do not** register a new top-level `server.tool()` unless it has a fundamentally different schema shape.
+- **Read-only?** Add to `QUERY_ACTIONS` + handler in `src/core/query.ts`.
+- **Write?** Add to `CONFIGURE_ACTIONS` + handler in `src/core/configure.ts`.
+- **Do not** put SSH/business logic in `server.ts` or duplicate it in CLI commands.
+- **Do not** register a new top-level `server.tool()` unless the schema shape is fundamentally different.
 
 ### Current Action Inventory
 
 **Query actions** (15 total):
 
-| Action | Handler | Description |
+| Action | Core handler (`src/core/`) | Description |
 |---|---|---|
 | `status` | `queryStatus()` | Full overview (7 show commands) |
 | `interfaces` | `queryInterfaces()` | Parsed interface data (detail flag for TX/RX) |
@@ -116,7 +121,7 @@ When adding a new operation:
 
 **Configure actions** (11 total):
 
-| Action | Handler | Description |
+| Action | Core handler (`src/core/`) | Description |
 |---|---|---|
 | `add_dhcp` | `configAddDhcp()` | Add DHCP reservation |
 | `remove_dhcp` | `configRemoveDhcp()` | Remove DHCP reservation |

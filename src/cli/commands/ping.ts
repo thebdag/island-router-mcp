@@ -1,11 +1,11 @@
 import { AxiError } from "axi-sdk-js";
-import { parsePing } from "../../parsers/system.js";
 import {
+  callCore,
   deviceFromContext,
   parseDeviceArgs,
-  runShow,
   type CliContext,
 } from "../session.js";
+import { queryPing } from "../../core/query.js";
 
 export async function pingCommand(
   args: string[],
@@ -18,17 +18,12 @@ export async function pingCommand(
       "island-axi ping <target> [--device <id>]",
     ]);
   }
-  if (/[;&|`$(){}]/.test(target)) {
-    throw new AxiError("invalid target — contains shell metacharacters", "VALIDATION_ERROR");
-  }
 
   const device = deviceFromContext(context, deviceId);
-  const output = await runShow(device, `ping ${target}`, 10_000);
-  const ping = parsePing(output);
-
+  const data = await callCore(() => queryPing(device, target));
   return {
     device: device.id,
     target,
-    ping,
+    ping: data.ping,
   };
 }

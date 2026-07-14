@@ -1,10 +1,10 @@
-import { parseDnsRedirects } from "../../parsers/dnsRedirects.js";
 import {
+  callCore,
   deviceFromContext,
   parseDeviceArgs,
-  runShow,
   type CliContext,
 } from "../session.js";
+import { queryDnsRedirects } from "../../core/query.js";
 
 export async function dnsRedirectsCommand(
   args: string[],
@@ -12,11 +12,9 @@ export async function dnsRedirectsCommand(
 ): Promise<Record<string, unknown>> {
   const { deviceId } = parseDeviceArgs(args, ["device"], "dns-redirects");
   const device = deviceFromContext(context, deviceId);
+  const data = await callCore(() => queryDnsRedirects(device));
 
-  const output = await runShow(device, "show running-config", 4000);
-  const redirects = parseDnsRedirects(output);
-
-  if (redirects.length === 0) {
+  if (data.dns_redirects.length === 0) {
     return {
       device: device.id,
       dns_redirects: "0 DNS redirects found",
@@ -28,8 +26,8 @@ export async function dnsRedirectsCommand(
 
   return {
     device: device.id,
-    count: redirects.length,
-    dns_redirects: redirects.map((r) => ({
+    count: data.count,
+    dns_redirects: data.dns_redirects.map((r) => ({
       domain: r.domain,
       server: r.server,
     })),

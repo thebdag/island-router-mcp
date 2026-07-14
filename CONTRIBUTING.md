@@ -13,10 +13,11 @@ npm test
 
 ## Surfaces
 
-- **MCP server** — `npm start` → `build/server.js`
-- **AXI CLI** — `node build/cli/island-axi.js` (bin: `island-axi`)
+- **Core** — `src/core/` (implement router actions here)
+- **AXI CLI (primary)** — `node build/cli/island-axi.js` / `island-axi`
+- **MCP (adapter)** — `npm start` → `build/server.js`
 
-Router ops added to one surface should almost always land in the other. Shared allowlist: `src/allowedCommands.ts`.
+Wire both surfaces to core; do not duplicate SSH logic. Allowlist: `src/allowedCommands.ts`.
 
 ## Docs to update with code
 

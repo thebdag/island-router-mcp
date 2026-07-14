@@ -1,12 +1,12 @@
-import { parseInterfaceDetail, parseInterfaceSummary } from "../../parsers/interfaces.js";
-import { flagBool, parseLimit } from "../args.js";
+import { parseLimit, flagBool } from "../args.js";
 import { parseFieldsFlag, pickFields } from "../format.js";
 import {
+  callCore,
   deviceFromContext,
   parseDeviceArgs,
-  runShow,
   type CliContext,
 } from "../session.js";
+import { queryInterfaces } from "../../core/query.js";
 
 const DEFAULT_FIELDS = ["name", "status", "protocol", "description"];
 const DETAIL_FIELDS = ["name", "status", "txBytes", "rxBytes"];
@@ -28,11 +28,8 @@ export async function interfacesCommand(
   );
   const limit = parseLimit(parsed.flags["limit"], 100, 500);
 
-  const cmd = detail ? "show interface" : "show interface summary";
-  const output = await runShow(device, cmd, 3000);
-  const parsedIfaces = detail
-    ? parseInterfaceDetail(output)
-    : parseInterfaceSummary(output);
+  const data = await callCore(() => queryInterfaces(device, detail));
+  const parsedIfaces = data.interfaces;
 
   if (parsedIfaces.length === 0) {
     return {

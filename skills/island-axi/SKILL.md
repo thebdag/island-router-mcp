@@ -9,7 +9,8 @@ description: >
 # island-axi
 
 Agent ergonomic wrapper around Island Router SSH CLI ([AXI](https://axi.md/) principles).
-Prefer this over raw SSH or ad-hoc expect scripts for router operations.
+Prefer this over raw SSH, ad-hoc expect scripts, **and MCP** for agent shell workflows.
+(MCP remains available as a thin adapter over the same `src/core/` actions.)
 
 You do not need island-axi installed globally — invoke with:
 

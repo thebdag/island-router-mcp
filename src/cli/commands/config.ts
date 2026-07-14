@@ -1,11 +1,12 @@
 import { flagBool } from "../args.js";
 import { truncateText } from "../format.js";
 import {
+  callCore,
   deviceFromContext,
   parseDeviceArgs,
-  runShow,
   type CliContext,
 } from "../session.js";
+import { queryConfig, queryConfigDiff } from "../../core/query.js";
 
 export async function configCommand(
   args: string[],
@@ -15,13 +16,13 @@ export async function configCommand(
   const device = deviceFromContext(context, deviceId);
   const full = flagBool(parsed.flags, "full");
 
-  const output = await runShow(device, "show running-config", 4000);
-  const { text, truncated, totalChars } = truncateText(output, 1200);
+  const data = await callCore(() => queryConfig(device));
+  const { text, truncated, totalChars } = truncateText(data.config, 1200);
 
   const result: Record<string, unknown> = {
     device: device.id,
     chars: totalChars,
-    config: full ? output : text,
+    config: full ? data.config : text,
   };
 
   if (!full && truncated) {
@@ -45,8 +46,8 @@ export async function configDiffCommand(
   const device = deviceFromContext(context, deviceId);
   const full = flagBool(parsed.flags, "full");
 
-  const output = await runShow(device, "show running-config differences", 4000);
-  const trimmed = output.trim();
+  const data = await callCore(() => queryConfigDiff(device));
+  const trimmed = data.output.trim();
   if (!trimmed) {
     return {
       device: device.id,
@@ -54,11 +55,11 @@ export async function configDiffCommand(
     };
   }
 
-  const { text, truncated, totalChars } = truncateText(output, 1200);
+  const { text, truncated, totalChars } = truncateText(data.output, 1200);
   const result: Record<string, unknown> = {
     device: device.id,
     chars: totalChars,
-    diff: full ? output : text,
+    diff: full ? data.output : text,
   };
   if (!full && truncated) {
     result.help = ["Run `island-axi config-diff --full` for complete diff"];

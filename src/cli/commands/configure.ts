@@ -1,14 +1,11 @@
 import { AxiError } from "axi-sdk-js";
-import { parseDhcpReservationsCsv } from "../../parsers/dhcp.js";
-import { parseDnsRedirects } from "../../parsers/dnsRedirects.js";
-import { parseSyslogConfig } from "../../parsers/logs.js";
-import { runCommand } from "../../islandSsh.js";
 import { flagBool, flagString, parseFlags } from "../args.js";
 import {
+  callCore,
   deviceFromContext,
-  withSession,
   type CliContext,
 } from "../session.js";
+import { dispatchConfigure } from "../../core/configure.js";
 
 const ACTIONS = [
   "add-dhcp",
@@ -25,6 +22,20 @@ const ACTIONS = [
 ] as const;
 
 type Action = (typeof ACTIONS)[number];
+
+const ACTION_TO_CORE: Record<Action, string> = {
+  "add-dhcp": "add_dhcp",
+  "remove-dhcp": "remove_dhcp",
+  "set-syslog": "set_syslog",
+  "remove-syslog": "remove_syslog",
+  "set-hostname": "set_hostname",
+  "set-auto-update": "set_auto_update",
+  "set-led": "set_led",
+  "set-timezone": "set_timezone",
+  "set-ntp": "set_ntp",
+  "add-dns-redirect": "add_dns_redirect",
+  "remove-dns-redirect": "remove_dns_redirect",
+};
 
 const ACTION_FLAGS: Record<Action, string[]> = {
   "add-dhcp": ["device", "mac", "ip", "hostname", "confirm"],
@@ -52,24 +63,6 @@ function requireFlag(
     ]);
   }
   return value;
-}
-
-function validateMac(mac: string): void {
-  if (!/^([0-9a-fA-F]{2}[:\-.]){5}[0-9a-fA-F]{2}$/.test(mac)) {
-    throw new AxiError(`Invalid MAC: '${mac}'`, "VALIDATION_ERROR");
-  }
-}
-
-function validateIp(ip: string): void {
-  if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) {
-    throw new AxiError(`Invalid IP: '${ip}'`, "VALIDATION_ERROR");
-  }
-}
-
-function validateSafe(value: string, label: string): void {
-  if (/[;&|`$(){}]/.test(value)) {
-    throw new AxiError(`Invalid ${label} — contains shell metacharacters`, "VALIDATION_ERROR");
-  }
 }
 
 export async function configureCommand(
@@ -113,197 +106,80 @@ export async function configureCommand(
     throw new AxiError(
       "mutations require --confirm (no interactive prompts)",
       "VALIDATION_ERROR",
-      [`Re-run with --confirm after reviewing the change`],
+      ["Re-run with --confirm after reviewing the change"],
     );
   }
 
-  const device = deviceFromContext(context, flagString(flags, "device"));
-
-  switch (action) {
-    case "add-dhcp": {
-      const mac = requireFlag(flags, "mac", action);
-      const ip = requireFlag(flags, "ip", action);
-      const hostname = flagString(flags, "hostname");
-      validateMac(mac);
-      validateIp(ip);
-      if (hostname) validateSafe(hostname, "hostname");
-
-      const result = await withSession(device, async (s) => {
-        let cmd = `ip dhcp-reserve ${mac} ${ip}`;
-        if (hostname) cmd += ` ${hostname}`;
-        await runCommand(s, cmd, 2000);
-        await runCommand(s, "write memory", 3000);
-        return runCommand(s, "show ip dhcp-reservations csv", 2000);
-      });
-      const reservations = parseDhcpReservationsCsv(result);
-      return {
-        applied: true,
-        device: device.id,
-        mac,
-        ip,
-        hostname: hostname ?? null,
-        count: reservations.length,
-        help: ["Run `island-axi dhcp` to list reservations"],
-      };
-    }
-
-    case "remove-dhcp": {
-      const mac = requireFlag(flags, "mac", action);
-      validateMac(mac);
-      await withSession(device, async (s) => {
-        await runCommand(s, `no ip dhcp-reserve ${mac}`, 2000);
-        await runCommand(s, "write memory", 3000);
-      });
-      return {
-        removed: true,
-        device: device.id,
-        mac,
-        help: ["Run `island-axi dhcp` to verify"],
-      };
-    }
-
-    case "set-syslog": {
-      const serverIp = requireFlag(flags, "server-ip", action);
-      validateIp(serverIp);
-      const port = Number.parseInt(flagString(flags, "port") ?? "514", 10);
-      const level = Number.parseInt(flagString(flags, "level") ?? "7", 10);
-      const protocol = flagString(flags, "protocol") ?? "udp";
-      if (level < 0 || level > 7) {
-        throw new AxiError("level must be 0-7", "VALIDATION_ERROR");
-      }
-      if (protocol !== "udp" && protocol !== "tcp") {
-        throw new AxiError("protocol must be udp or tcp", "VALIDATION_ERROR");
-      }
-      const verify = await withSession(device, async (s) => {
-        const serverArg = port === 514 ? serverIp : `${serverIp}:${port}`;
-        await runCommand(s, `syslog server ${serverArg}`, 2000);
-        await runCommand(s, `syslog level ${level}`, 1500);
-        await runCommand(s, `syslog protocol ${protocol}`, 1500);
-        await runCommand(s, "write memory", 3000);
-        return runCommand(s, "show syslog", 2000);
-      });
-      return {
-        configured: true,
-        device: device.id,
-        server_ip: serverIp,
-        port,
-        level,
-        protocol,
-        verified: parseSyslogConfig(verify),
-        help: ["Run `island-axi logs` to view recent entries"],
-      };
-    }
-
-    case "remove-syslog": {
-      const verify = await withSession(device, async (s) => {
-        await runCommand(s, "no syslog server", 2000);
-        await runCommand(s, "write memory", 3000);
-        return runCommand(s, "show syslog", 2000);
-      });
-      return {
-        removed: true,
-        device: device.id,
-        verified: parseSyslogConfig(verify),
-      };
-    }
-
-    case "set-hostname": {
-      const hostname = requireFlag(flags, "hostname", action);
-      validateSafe(hostname, "hostname");
-      await withSession(device, async (s) => {
-        await runCommand(s, `hostname ${hostname}`, 2000);
-        await runCommand(s, "write memory", 3000);
-      });
-      return { configured: true, device: device.id, hostname };
-    }
-
-    case "set-auto-update": {
-      const days = requireFlag(flags, "days", action);
-      validateSafe(days, "days");
-      const time = flagString(flags, "time");
-      if (time) validateSafe(time, "time");
-      await withSession(device, async (s) => {
-        await runCommand(s, `auto-update days ${days}`, 2000);
-        if (time) await runCommand(s, `auto-update time ${time}`, 2000);
-        await runCommand(s, "write memory", 3000);
-      });
-      return { configured: true, device: device.id, days, time: time ?? null };
-    }
-
-    case "set-led": {
-      const levelStr = requireFlag(flags, "level", action);
-      const ledLevel = Number.parseInt(levelStr, 10);
-      if (!Number.isFinite(ledLevel) || ledLevel < 0 || ledLevel > 100) {
-        throw new AxiError("level must be 0-100", "VALIDATION_ERROR");
-      }
-      await withSession(device, async (s) => {
-        await runCommand(s, `led level ${ledLevel}`, 2000);
-        await runCommand(s, "write memory", 3000);
-      });
-      return { configured: true, device: device.id, led_level: ledLevel };
-    }
-
-    case "set-timezone": {
-      const timezone = requireFlag(flags, "timezone", action);
-      validateSafe(timezone, "timezone");
-      await withSession(device, async (s) => {
-        await runCommand(s, `timezone ${timezone}`, 2000);
-        await runCommand(s, "write memory", 3000);
-      });
-      return { configured: true, device: device.id, timezone };
-    }
-
-    case "set-ntp": {
-      const server = requireFlag(flags, "server", action);
-      validateSafe(server, "server");
-      await withSession(device, async (s) => {
-        await runCommand(s, `ntp ${server}`, 2000);
-        await runCommand(s, "write memory", 3000);
-      });
-      return {
-        configured: true,
-        device: device.id,
-        ntp_server: server,
-        help: ["Run `island-axi ntp` to verify sync status"],
-      };
-    }
-
-    case "add-dns-redirect": {
-      const domain = requireFlag(flags, "domain", action);
-      const redirectServer = requireFlag(flags, "redirect-server", action);
-      validateSafe(domain, "domain");
-      validateIp(redirectServer);
-      const verify = await withSession(device, async (s) => {
-        await runCommand(s, `ip dns redirect ${domain} ${redirectServer}`, 2000);
-        await runCommand(s, "write memory", 3000);
-        return runCommand(s, "show running-config", 4000);
-      });
-      return {
-        applied: true,
-        device: device.id,
-        domain,
-        redirect_server: redirectServer,
-        count: parseDnsRedirects(verify).length,
-        help: ["Run `island-axi dns-redirects` to list rules"],
-      };
-    }
-
-    case "remove-dns-redirect": {
-      const domain = requireFlag(flags, "domain", action);
-      validateSafe(domain, "domain");
-      await withSession(device, async (s) => {
-        await runCommand(s, `no ip dns redirect ${domain}`, 2000);
-        await runCommand(s, "write memory", 3000);
-      });
-      return {
-        removed: true,
-        device: device.id,
-        domain,
-        help: ["Run `island-axi dns-redirects` to verify"],
-      };
-    }
-
-    default:
-      throw new AxiError(`unhandled action: ${action}`, "INTERNAL_ERROR");
+  // Validate required flags before SSH
+  if (action === "add-dhcp") {
+    requireFlag(flags, "mac", action);
+    requireFlag(flags, "ip", action);
+  } else if (action === "remove-dhcp") {
+    requireFlag(flags, "mac", action);
+  } else if (action === "set-syslog") {
+    requireFlag(flags, "server-ip", action);
+  } else if (action === "set-hostname") {
+    requireFlag(flags, "hostname", action);
+  } else if (action === "set-auto-update") {
+    requireFlag(flags, "days", action);
+  } else if (action === "set-led") {
+    requireFlag(flags, "level", action);
+  } else if (action === "set-timezone") {
+    requireFlag(flags, "timezone", action);
+  } else if (action === "set-ntp") {
+    requireFlag(flags, "server", action);
+  } else if (action === "add-dns-redirect") {
+    requireFlag(flags, "domain", action);
+    requireFlag(flags, "redirect-server", action);
+  } else if (action === "remove-dns-redirect") {
+    requireFlag(flags, "domain", action);
   }
+
+  const device = deviceFromContext(context, flagString(flags, "device"));
+  const portStr = flagString(flags, "port");
+  const levelStr = flagString(flags, "level");
+
+  const result = await callCore(() =>
+    dispatchConfigure(device, {
+      action: ACTION_TO_CORE[action],
+      mac: flagString(flags, "mac"),
+      ip: flagString(flags, "ip"),
+      hostname: flagString(flags, "hostname"),
+      server_ip: flagString(flags, "server-ip"),
+      port: portStr ? Number.parseInt(portStr, 10) : undefined,
+      level: action === "set-syslog" && levelStr
+        ? Number.parseInt(levelStr, 10)
+        : undefined,
+      protocol: flagString(flags, "protocol"),
+      days: flagString(flags, "days"),
+      time_str: flagString(flags, "time"),
+      led_level: action === "set-led" && levelStr
+        ? Number.parseInt(levelStr, 10)
+        : undefined,
+      timezone: flagString(flags, "timezone"),
+      ntp_server: flagString(flags, "server"),
+      domain: flagString(flags, "domain"),
+      redirect_server: flagString(flags, "redirect-server"),
+    }),
+  );
+
+  const compact: Record<string, unknown> = { ...result };
+  delete compact.config_output;
+  delete compact.write_output;
+  delete compact.days_output;
+  delete compact.time_output;
+  if (typeof compact.reservations === "string") delete compact.reservations;
+  if (typeof compact.ntp_config === "string") delete compact.ntp_config;
+
+  const helpByAction: Partial<Record<Action, string[]>> = {
+    "add-dhcp": ["Run `island-axi dhcp` to list reservations"],
+    "remove-dhcp": ["Run `island-axi dhcp` to verify"],
+    "set-syslog": ["Run `island-axi logs` to view recent entries"],
+    "set-ntp": ["Run `island-axi ntp` to verify sync status"],
+    "add-dns-redirect": ["Run `island-axi dns-redirects` to list rules"],
+    "remove-dns-redirect": ["Run `island-axi dns-redirects` to verify"],
+  };
+  if (helpByAction[action]) compact.help = helpByAction[action];
+
+  return compact;
 }

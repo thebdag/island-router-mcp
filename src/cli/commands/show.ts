@@ -1,17 +1,14 @@
 import { AxiError } from "axi-sdk-js";
 import { flagBool } from "../args.js";
 import { truncateText } from "../format.js";
+import { ALLOWED_SHOW_COMMANDS } from "../../allowedCommands.js";
 import {
-  ALLOWED_SHOW_COMMANDS,
-  isCommandAllowed,
-  normalizeShowCommand,
-} from "../allowedCommands.js";
-import {
+  callCore,
   deviceFromContext,
   parseDeviceArgs,
-  runShow,
   type CliContext,
 } from "../session.js";
+import { queryCommand } from "../../core/query.js";
 
 export async function showCommand(
   args: string[],
@@ -27,30 +24,22 @@ export async function showCommand(
     ]);
   }
 
-  const command = normalizeShowCommand(parsed.positionals.join(" "));
-  if (!isCommandAllowed(command)) {
-    throw new AxiError(
-      `Command not allowed: '${command}'`,
-      "VALIDATION_ERROR",
-      [
-        "Only read-only show commands are permitted",
-        "Run `island-axi show --help` for usage",
-      ],
-    );
-  }
-
   const device = deviceFromContext(context, deviceId);
-  const output = await runShow(device, command, 3000);
-  const { text, truncated, totalChars } = truncateText(output, 1500);
+  const data = await callCore(() =>
+    queryCommand(device, parsed.positionals.join(" ")),
+  );
+  const { text, truncated, totalChars } = truncateText(data.output, 1500);
 
   const result: Record<string, unknown> = {
     device: device.id,
-    command,
+    command: data.command,
     chars: totalChars,
-    output: full ? output : text,
+    output: full ? data.output : text,
   };
   if (!full && truncated) {
-    result.help = [`Run \`island-axi show ${parsed.positionals.join(" ")} --full\` for complete output`];
+    result.help = [
+      `Run \`island-axi show ${parsed.positionals.join(" ")} --full\` for complete output`,
+    ];
   }
   return result;
 }

@@ -1,15 +1,11 @@
 #!/usr/bin/env node
 /**
- * server.ts — Island Router MCP Server (meta-tool architecture)
+ * server.ts — Thin MCP adapter over the Island Router core.
  *
- * Reduces token overhead by consolidating into 3 meta-tools:
- *   - island_list_devices   (inventory, no SSH)
- *   - island_query          (all read-only operations, dispatched by action)
- *   - island_configure      (all write operations, dispatched by action, guarded)
+ * Prefer `island-axi` for agent shell workflows. This server exists for
+ * MCP-only hosts and shares the same action core as the AXI CLI.
  *
- * Aligned with official Island Router CLI Reference Guide (firmware 2.3.2).
- * NOTE: The Island CLI does NOT require `configure terminal` — config commands
- * work from the global prompt. `end` exits interface context, not config mode.
+ * Meta-tools: island_list_devices | island_query | island_configure
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -18,26 +14,15 @@ import { z } from "zod";
 import fs from "node:fs";
 import "dotenv/config";
 
-import {
-  openSession,
-  closeSession,
-  runCommand,
-  type DeviceConfig,
-  type ShellSession,
-} from "./islandSsh.js";
+import type { DeviceConfig } from "./islandSsh.js";
 import { getDeviceOrThrow as lookupDevice, loadDevices } from "./devices.js";
-
-import { parseInterfaceSummary, parseInterfaceDetail } from "./parsers/interfaces.js";
-import { parseRoutes, parseNeighbors } from "./parsers/routes.js";
-import { parseLogEntries, parseSyslogConfig } from "./parsers/logs.js";
-import { parseDhcpReservationsCsv } from "./parsers/dhcp.js";
-import { parseVpnPeers } from "./parsers/vpn.js";
-import { parseNtpConfig, parseNtpStatus, parseNtpAssociations } from "./parsers/ntp.js";
-import { parseVersion, parsePing, parseSpeedtest } from "./parsers/system.js";
-import { parseDnsRedirects } from "./parsers/dnsRedirects.js";
-import { ALLOWED_SHOW_COMMANDS, isCommandAllowed } from "./allowedCommands.js";
-
-// ─── Device inventory ────────────────────────────────────────────────────────
+import {
+  CONFIGURE_ACTIONS,
+  dispatchConfigure,
+  dispatchQuery,
+  QUERY_ACTIONS,
+  type QueryAction,
+} from "./core/index.js";
 
 const inventoryPath = process.env["ISLAND_DEVICE_INVENTORY"] ?? "devices.json";
 const devices: DeviceConfig[] = loadDevices(inventoryPath);
@@ -51,491 +36,37 @@ function getDeviceOrThrow(deviceId: string): DeviceConfig {
   return lookupDevice(devices, deviceId);
 }
 
-// ─── Syslog level map ────────────────────────────────────────────────────────
-// Official guide: syslog level is numeric 0-7
-// 0 = Critical system failure
-// 1 = Critical or unexpected unrecoverable error
-// 2 = Unexpected recoverable error
-// 3 = Less severe error
-// 4 = Warning
-// 5 = Informational message
-// 6 = Debugging message
-// 7 = Verbose debugging message (default)
+type McpText = { content: Array<{ type: "text"; text: string }> };
 
-const SYSLOG_LEVEL_NAMES: Record<number, string> = {
-  0: "critical-system-failure",
-  1: "critical-unrecoverable",
-  2: "recoverable-error",
-  3: "less-severe-error",
-  4: "warning",
-  5: "informational",
-  6: "debug",
-  7: "verbose-debug",
-};
-
-// ─── Session helper ──────────────────────────────────────────────────────────
-
-async function withSession<T>(
-  device: DeviceConfig,
-  fn: (session: ShellSession) => Promise<T>,
-): Promise<T> {
-  const session = await openSession(device);
-  try {
-    return await fn(session);
-  } finally {
-    closeSession(session);
-  }
-}
-
-// ─── Input validators ────────────────────────────────────────────────────────
-
-function validateMac(mac: string): void {
-  if (!/^([0-9a-fA-F]{2}[:\-.]){5}[0-9a-fA-F]{2}$/.test(mac)) {
-    throw new Error(`Invalid MAC: '${mac}'`);
-  }
-}
-
-function validateIp(ip: string): void {
-  if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) {
-    throw new Error(`Invalid IP: '${ip}'`);
-  }
-}
-
-function validateSafe(value: string, label: string): void {
-  if (/[;&|`$(){}]/.test(value)) {
-    throw new Error(`Invalid ${label} — contains shell metacharacters`);
-  }
-}
-
-function validateDomain(domain: string): void {
-  validateSafe(domain, "domain");
-  // Basic domain validation: alphanumeric, hyphens, dots, wildcards
-  if (!/^[\w.*-]+(?:\.[\w.*-]+)*$/.test(domain)) {
-    throw new Error(`Invalid domain: '${domain}'`);
-  }
-}
-
-// ─── Query action handlers ──────────────────────────────────────────────────
-
-type QueryResult = { content: Array<{ type: "text"; text: string }> };
-
-async function queryStatus(dev: DeviceConfig): Promise<QueryResult> {
-  const result = await withSession(dev, async (s) => {
-    const cmds = [
-      { cmd: "show interface summary", waitMs: 2000 },
-      { cmd: "show ip interface", waitMs: 2000 },
-      { cmd: "show ip routes", waitMs: 2000 },
-      { cmd: "show ip neighbors", waitMs: 2000 },
-      { cmd: "show version", waitMs: 2000 },
-      { cmd: "show stats", waitMs: 2000 },
-      { cmd: "show clock", waitMs: 1500 },
-    ];
-    const out: Record<string, string> = {};
-    for (const { cmd, waitMs } of cmds) {
-      out[cmd] = await runCommand(s, cmd, waitMs);
-    }
-    return out;
-  });
-
-  return text({
-    device_id: dev.id, host: dev.host,
-    interfaces: parseInterfaceSummary(result["show interface summary"] ?? ""),
-    ip_interfaces: result["show ip interface"],
-    routes: parseRoutes(result["show ip routes"] ?? ""),
-    neighbors: parseNeighbors(result["show ip neighbors"] ?? ""),
-    version: parseVersion(result["show version"] ?? ""),
-    stats: result["show stats"],
-    clock: result["show clock"],
-  });
-}
-
-async function queryInterfaces(dev: DeviceConfig, detail: boolean): Promise<QueryResult> {
-  const cmd = detail ? "show interface" : "show interface summary";
-  const output = await withSession(dev, (s) => runCommand(s, cmd, 3000));
-  const parsed = detail ? parseInterfaceDetail(output) : parseInterfaceSummary(output);
-  return text({ device_id: dev.id, command: cmd, interfaces: parsed });
-}
-
-async function queryNeighbors(dev: DeviceConfig): Promise<QueryResult> {
-  const output = await withSession(dev, (s) => runCommand(s, "show ip neighbors", 2000));
-  const parsed = parseNeighbors(output);
-  return text({ device_id: dev.id, count: parsed.length, neighbors: parsed });
-}
-
-async function queryRoutes(dev: DeviceConfig): Promise<QueryResult> {
-  const output = await withSession(dev, (s) => runCommand(s, "show ip routes", 2000));
-  const parsed = parseRoutes(output);
-  return text({ device_id: dev.id, count: parsed.length, routes: parsed });
-}
-
-async function queryLogs(dev: DeviceConfig): Promise<QueryResult> {
-  const result = await withSession(dev, async (s) => ({
-    log: await runCommand(s, "show log", 3000),
-    syslog: await runCommand(s, "show syslog", 2000),
-  }));
-  const entries = parseLogEntries(result.log);
-  const syslogConfig = parseSyslogConfig(result.syslog);
-  return text({ device_id: dev.id, count: entries.length, syslog_config: syslogConfig, entries: entries.slice(-100) });
-}
-
-async function queryConfig(dev: DeviceConfig): Promise<QueryResult> {
-  const output = await withSession(dev, (s) => runCommand(s, "show running-config", 4000));
-  return { content: [{ type: "text" as const, text: output }] };
-}
-
-async function queryVpns(dev: DeviceConfig): Promise<QueryResult> {
-  const output = await withSession(dev, (s) => runCommand(s, "show vpns", 2000));
-  const parsed = parseVpnPeers(output);
-  return text({ device_id: dev.id, vpn: parsed });
-}
-
-async function queryCommand(dev: DeviceConfig, command: string): Promise<QueryResult> {
-  if (!isCommandAllowed(command)) {
-    return {
-      content: [{
-        type: "text" as const,
-        text: JSON.stringify({
-          error: `Command not allowed: '${command}'`,
-          hint: "Only read-only 'show' commands are permitted.",
-          allowed: ALLOWED_SHOW_COMMANDS,
-        }, null, 2),
-      }],
-    };
-  }
-  const output = await withSession(dev, (s) => runCommand(s, command, 3000));
-  return text({ device_id: dev.id, command, output });
-}
-
-async function queryPing(dev: DeviceConfig, target: string): Promise<QueryResult> {
-  validateSafe(target, "target");
-  const output = await withSession(dev, (s) => runCommand(s, `ping ${target}`, 10000));
-  const parsed = parsePing(output);
-  return text({ device_id: dev.id, ping: parsed });
-}
-
-async function queryDhcpReservations(dev: DeviceConfig): Promise<QueryResult> {
-  const output = await withSession(dev, (s) => runCommand(s, "show ip dhcp-reservations csv", 2000));
-  const parsed = parseDhcpReservationsCsv(output);
-  return text({ device_id: dev.id, count: parsed.length, reservations: parsed });
-}
-
-async function querySpeedtest(dev: DeviceConfig): Promise<QueryResult> {
-  const output = await withSession(dev, (s) => runCommand(s, "show speedtest", 3000));
-  const parsed = parseSpeedtest(output);
-  return text({ device_id: dev.id, count: parsed.length, speedtest_results: parsed });
-}
-
-async function queryHistory(dev: DeviceConfig, time = "1h"): Promise<QueryResult> {
-  validateSafe(time, "time");
-  const cmd = `show history begin ${time} first json:`;
-  const output = await withSession(dev, (s) => runCommand(s, cmd, 5000));
-  return text({ device_id: dev.id, command: cmd, time_range: time, output });
-}
-
-async function queryConfigDiff(dev: DeviceConfig): Promise<QueryResult> {
-  const output = await withSession(dev, (s) => runCommand(s, "show running-config differences", 4000));
-  return text({ device_id: dev.id, command: "show running-config differences", output });
-}
-
-async function queryNtp(dev: DeviceConfig): Promise<QueryResult> {
-  const result = await withSession(dev, async (s) => ({
-    ntp: await runCommand(s, "show ntp", 2000),
-    status: await runCommand(s, "show ntp status", 2000),
-    associations: await runCommand(s, "show ntp associations", 2000),
-  }));
-  return text({
-    device_id: dev.id,
-    ntp_config: parseNtpConfig(result.ntp),
-    status: parseNtpStatus(result.status),
-    associations: parseNtpAssociations(result.associations),
-  });
-}
-
-async function queryDnsRedirects(dev: DeviceConfig): Promise<QueryResult> {
-  const output = await withSession(dev, (s) => runCommand(s, "show running-config", 4000));
-  const parsed = parseDnsRedirects(output);
-  return text({ device_id: dev.id, count: parsed.length, dns_redirects: parsed });
-}
-
-// ─── Configure action handlers ──────────────────────────────────────────────
-// NOTE: `configure terminal` is unnecessary on the Island CLI (fw 2.3.2) —
-// configuration commands work from the global prompt. We issue commands
-// directly without entering/exiting config mode.
-
-async function configAddDhcp(
-  dev: DeviceConfig, mac: string, ip: string, hostname?: string,
-): Promise<QueryResult> {
-  validateMac(mac);
-  validateIp(ip);
-
-  const result = await withSession(dev, async (s) => {
-    let cmd = `ip dhcp-reserve ${mac} ${ip}`;
-    if (hostname) cmd += ` ${hostname}`;
-    const configOut = await runCommand(s, cmd, 2000);
-    const writeOut = await runCommand(s, "write memory", 3000);
-    const verify = await runCommand(s, "show ip dhcp-reservations", 2000);
-    return { configOut, writeOut, verify };
-  });
-
-  return text({
-    applied: true, device_id: dev.id, mac, ip,
-    hostname: hostname ?? null,
-    config_output: result.configOut,
-    write_output: result.writeOut,
-    reservations: result.verify,
-  });
-}
-
-async function configRemoveDhcp(dev: DeviceConfig, mac: string): Promise<QueryResult> {
-  validateMac(mac);
-
-  const result = await withSession(dev, async (s) => {
-    const configOut = await runCommand(s, `no ip dhcp-reserve ${mac}`, 2000);
-    const writeOut = await runCommand(s, "write memory", 3000);
-    const verify = await runCommand(s, "show ip dhcp-reservations", 2000);
-    return { configOut, writeOut, verify };
-  });
-
-  return text({
-    removed: true, device_id: dev.id, mac,
-    config_output: result.configOut,
-    write_output: result.writeOut,
-    reservations: result.verify,
-  });
-}
-
-async function configSyslog(
-  dev: DeviceConfig, serverIp: string, port: number, level: number, protocol: string,
-): Promise<QueryResult> {
-  validateIp(serverIp);
-
-  const result = await withSession(dev, async (s) => {
-    const serverArg = port === 514 ? serverIp : `${serverIp}:${port}`;
-    await runCommand(s, `syslog server ${serverArg}`, 2000);
-    await runCommand(s, `syslog level ${level}`, 1500);
-    await runCommand(s, `syslog protocol ${protocol}`, 1500);
-    const writeOut = await runCommand(s, "write memory", 3000);
-    const verify = await runCommand(s, "show syslog", 2000);
-    return { writeOut, verify };
-  });
-
-  return text({
-    configured: true, device_id: dev.id,
-    server_ip: serverIp, port,
-    level, level_name: SYSLOG_LEVEL_NAMES[level] ?? "unknown",
-    protocol,
-    write_output: result.writeOut,
-    verified_config: parseSyslogConfig(result.verify),
-  });
-}
-
-async function configRemoveSyslog(dev: DeviceConfig): Promise<QueryResult> {
-  const result = await withSession(dev, async (s) => {
-    const configOut = await runCommand(s, "no syslog server", 2000);
-    const writeOut = await runCommand(s, "write memory", 3000);
-    const verify = await runCommand(s, "show syslog", 2000);
-    return { configOut, writeOut, verify };
-  });
-
-  return text({
-    removed: true, device_id: dev.id,
-    config_output: result.configOut,
-    write_output: result.writeOut,
-    verified_config: parseSyslogConfig(result.verify),
-  });
-}
-
-async function configHostname(dev: DeviceConfig, hostname: string): Promise<QueryResult> {
-  validateSafe(hostname, "hostname");
-
-  const result = await withSession(dev, async (s) => {
-    const configOut = await runCommand(s, `hostname ${hostname}`, 2000);
-    const writeOut = await runCommand(s, "write memory", 3000);
-    return { configOut, writeOut };
-  });
-
-  return text({
-    configured: true, device_id: dev.id,
-    hostname,
-    config_output: result.configOut,
-    write_output: result.writeOut,
-  });
-}
-
-async function configAutoUpdate(
-  dev: DeviceConfig, days: string, time?: string,
-): Promise<QueryResult> {
-  validateSafe(days, "days");
-
-  const result = await withSession(dev, async (s) => {
-    const daysOut = await runCommand(s, `auto-update days ${days}`, 2000);
-    let timeOut = "";
-    if (time) {
-      validateSafe(time, "time");
-      timeOut = await runCommand(s, `auto-update time ${time}`, 2000);
-    }
-    const writeOut = await runCommand(s, "write memory", 3000);
-    return { daysOut, timeOut, writeOut };
-  });
-
-  return text({
-    configured: true, device_id: dev.id,
-    days, time: time ?? null,
-    days_output: result.daysOut,
-    time_output: result.timeOut || null,
-    write_output: result.writeOut,
-  });
-}
-
-async function configLed(dev: DeviceConfig, ledLevel: number): Promise<QueryResult> {
-  const result = await withSession(dev, async (s) => {
-    const configOut = await runCommand(s, `led level ${ledLevel}`, 2000);
-    const writeOut = await runCommand(s, "write memory", 3000);
-    return { configOut, writeOut };
-  });
-
-  return text({
-    configured: true, device_id: dev.id,
-    led_level: ledLevel,
-    config_output: result.configOut,
-    write_output: result.writeOut,
-  });
-}
-
-async function configTimezone(dev: DeviceConfig, timezone: string): Promise<QueryResult> {
-  validateSafe(timezone, "timezone");
-
-  const result = await withSession(dev, async (s) => {
-    const configOut = await runCommand(s, `timezone ${timezone}`, 2000);
-    const writeOut = await runCommand(s, "write memory", 3000);
-    const verify = await runCommand(s, "show clock", 1500);
-    return { configOut, writeOut, verify };
-  });
-
-  return text({
-    configured: true, device_id: dev.id,
-    timezone,
-    config_output: result.configOut,
-    write_output: result.writeOut,
-    clock_after: result.verify,
-  });
-}
-
-async function configNtp(dev: DeviceConfig, ntpServer: string): Promise<QueryResult> {
-  validateSafe(ntpServer, "ntp_server");
-
-  const result = await withSession(dev, async (s) => {
-    const configOut = await runCommand(s, `ntp ${ntpServer}`, 2000);
-    const writeOut = await runCommand(s, "write memory", 3000);
-    const verify = await runCommand(s, "show ntp", 2000);
-    return { configOut, writeOut, verify };
-  });
-
-  return text({
-    configured: true, device_id: dev.id,
-    ntp_server: ntpServer,
-    config_output: result.configOut,
-    write_output: result.writeOut,
-    ntp_config: result.verify,
-  });
-}
-
-async function configAddDnsRedirect(
-  dev: DeviceConfig, domain: string, redirectServer: string,
-): Promise<QueryResult> {
-  validateDomain(domain);
-  validateIp(redirectServer);
-
-  const result = await withSession(dev, async (s) => {
-    const configOut = await runCommand(s, `ip dns redirect ${domain} ${redirectServer}`, 2000);
-    const writeOut = await runCommand(s, "write memory", 3000);
-    const verify = await runCommand(s, "show running-config", 4000);
-    return { configOut, writeOut, verify };
-  });
-
-  const redirects = parseDnsRedirects(result.verify);
-  return text({
-    applied: true, device_id: dev.id,
-    domain, redirect_server: redirectServer,
-    config_output: result.configOut,
-    write_output: result.writeOut,
-    active_redirects: redirects,
-  });
-}
-
-async function configRemoveDnsRedirect(
-  dev: DeviceConfig, domain: string,
-): Promise<QueryResult> {
-  validateDomain(domain);
-
-  const result = await withSession(dev, async (s) => {
-    const configOut = await runCommand(s, `no ip dns redirect ${domain}`, 2000);
-    const writeOut = await runCommand(s, "write memory", 3000);
-    const verify = await runCommand(s, "show running-config", 4000);
-    return { configOut, writeOut, verify };
-  });
-
-  const redirects = parseDnsRedirects(result.verify);
-  return text({
-    removed: true, device_id: dev.id,
-    domain,
-    config_output: result.configOut,
-    write_output: result.writeOut,
-    active_redirects: redirects,
-  });
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function text(obj: unknown): QueryResult {
+function text(obj: unknown): McpText {
   return { content: [{ type: "text" as const, text: JSON.stringify(obj, null, 2) }] };
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// MCP Server — 3 meta-tools
-// ═════════════════════════════════════════════════════════════════════════════
-
 const server = new McpServer({
   name: "island-router-mcp",
-  version: "0.4.0",
+  version: "0.5.0",
 });
-
-// ─── Tool 1: island_list_devices ─────────────────────────────────────────────
 
 server.tool(
   "island_list_devices",
   "List all configured Island Router devices. No SSH needed.",
   {},
-  async () => text(
-    devices.map(({ id, host, port, description }) => ({
-      id, host, port, description: description ?? null,
-    })),
-  ),
+  async () =>
+    text(
+      devices.map(({ id, host, port, description }) => ({
+        id,
+        host,
+        port,
+        description: description ?? null,
+      })),
+    ),
 );
 
-// ─── Tool 2: island_query (all read-only operations) ─────────────────────────
-
-const QueryActions = z.enum([
-  "status",              // Full overview (interfaces, routes, neighbors, version, stats, clock)
-  "interfaces",          // Parsed interface data (set detail=true for TX/RX byte counters)
-  "neighbors",           // Parsed ARP table (IP → MAC → interface → state)
-  "routes",              // Parsed routing table
-  "logs",                // Parsed log entries + syslog config
-  "config",              // Full running-config text
-  "config_diff",         // Side-by-side diff of running vs startup config
-  "vpns",                // VPN peer status
-  "dhcp_reservations",   // DHCP reservations (CSV format, parse-friendly)
-  "speedtest",           // Speed test history
-  "history",             // Event history (JSON format; pass 'time' for range, e.g. '1h', '1d', '1w')
-  "ntp",                 // Full NTP status (config + sync status + associations)
-  "dns_redirects",       // DNS redirect rules (hostname filtering — domain → server mappings)
-  "command",             // Run an allowlisted show command (pass 'command' param)
-  "ping",                // ICMP ping from router (pass 'target' param)
-]);
+const QueryActions = z.enum(QUERY_ACTIONS);
 
 server.tool(
   "island_query",
-  `Read-only query against an Island Router. Actions: status (full overview), interfaces (parsed, set detail=true for byte counters), neighbors (ARP table), routes (routing table), logs (parsed entries + syslog config), config (running-config), config_diff (running vs startup diff), vpns (peer status), dhcp_reservations (CSV format), speedtest (history), history (event history JSON — pass 'time' e.g. '1h','1d','1w'), ntp (config + status + associations), dns_redirects (hostname filtering rules — shows domain→server redirect mappings), command (any allowlisted show command — pass 'command'), ping (pass 'target').`,
+  `Read-only query against an Island Router (shared core with island-axi). Actions: ${QUERY_ACTIONS.join(", ")}.`,
   {
     device_id: z.string().describe("Device ID from inventory"),
     action: QueryActions.describe("Query action to perform"),
@@ -546,148 +77,61 @@ server.tool(
   },
   async ({ device_id, action, command, target, detail, time }) => {
     const dev = getDeviceOrThrow(device_id);
+    const result = await dispatchQuery(dev, {
+      action: action as QueryAction,
+      command,
+      target,
+      detail,
+      time,
+    });
 
-    switch (action) {
-      case "status":             return queryStatus(dev);
-      case "interfaces":         return queryInterfaces(dev, detail);
-      case "neighbors":          return queryNeighbors(dev);
-      case "routes":             return queryRoutes(dev);
-      case "logs":               return queryLogs(dev);
-      case "config":             return queryConfig(dev);
-      case "config_diff":        return queryConfigDiff(dev);
-      case "vpns":               return queryVpns(dev);
-      case "dhcp_reservations":  return queryDhcpReservations(dev);
-      case "speedtest":          return querySpeedtest(dev);
-      case "history":            return queryHistory(dev, time ?? "1h");
-      case "ntp":                return queryNtp(dev);
-      case "dns_redirects":     return queryDnsRedirects(dev);
-      case "command": {
-        if (!command) throw new Error("'command' parameter required for action='command'");
-        return queryCommand(dev, command);
-      }
-      case "ping": {
-        if (!target) throw new Error("'target' parameter required for action='ping'");
-        return queryPing(dev, target);
-      }
-      default:
-        throw new Error(`Unknown action: '${action}'`);
+    // Preserve raw running-config text for MCP clients expecting plain config body
+    if (action === "config" && result && typeof result === "object" && "config" in result) {
+      return {
+        content: [{ type: "text" as const, text: String((result as { config: string }).config) }],
+      };
     }
+    return text(result);
   },
 );
 
-// ─── Tool 3: island_configure (all write operations, guarded) ────────────────
-
-const ConfigureActions = z.enum([
-  "add_dhcp",            // Add DHCP reservation (mac, ip, hostname?)
-  "remove_dhcp",         // Remove DHCP reservation (mac)
-  "set_syslog",          // Configure syslog forwarding (server_ip, port?, level?, protocol?)
-  "remove_syslog",       // Remove syslog server
-  "set_hostname",        // Set router hostname (hostname)
-  "set_auto_update",     // Configure auto-update schedule (days, time_str?)
-  "set_led",             // Set LED brightness (led_level: 0-100)
-  "set_timezone",        // Set system timezone (timezone)
-  "set_ntp",             // Set NTP server (ntp_server)
-  "add_dns_redirect",    // Add DNS redirect / block hostname (domain, redirect_server)
-  "remove_dns_redirect", // Remove DNS redirect (domain)
-]);
-
-type ConfigureParams = {
-  device_id: string;
-  action: string;
-  mac?: string;
-  ip?: string;
-  hostname?: string;
-  server_ip?: string;
-  port: number;
-  level: number;
-  protocol: "udp" | "tcp";
-  days?: string;
-  domain?: string;
-  redirect_server?: string;
-  time_str?: string;
-  led_level?: number;
-  timezone?: string;
-  ntp_server?: string;
-};
-
-function requireParam(value: string | undefined, name: string): string {
-  if (!value) throw new Error(`'${name}' required`);
-  return value;
-}
-
-const configureHandlers: Record<string, (dev: DeviceConfig, p: ConfigureParams) => Promise<QueryResult>> = {
-  add_dhcp: (dev, p) => configAddDhcp(dev, requireParam(p.mac, "mac"), requireParam(p.ip, "ip"), p.hostname),
-  remove_dhcp: (dev, p) => configRemoveDhcp(dev, requireParam(p.mac, "mac")),
-  set_syslog: (dev, p) => configSyslog(dev, requireParam(p.server_ip, "server_ip"), p.port, p.level, p.protocol),
-  remove_syslog: (dev) => configRemoveSyslog(dev),
-  set_hostname: (dev, p) => configHostname(dev, requireParam(p.hostname, "hostname")),
-  set_auto_update: (dev, p) => configAutoUpdate(dev, requireParam(p.days, "days"), p.time_str),
-  set_led: (dev, p) => {
-    if (p.led_level === undefined) throw new Error("'led_level' required for set_led");
-    return configLed(dev, p.led_level);
-  },
-  set_timezone: (dev, p) => configTimezone(dev, requireParam(p.timezone, "timezone")),
-  set_ntp: (dev, p) => configNtp(dev, requireParam(p.ntp_server, "ntp_server")),
-  add_dns_redirect: (dev, p) => {
-    if (!p.domain) throw new Error("'domain' required for add_dns_redirect");
-    if (!p.redirect_server) throw new Error("'redirect_server' required for add_dns_redirect (use '0.0.0.0' to block/sinkhole)");
-    return configAddDnsRedirect(dev, p.domain, p.redirect_server);
-  },
-  remove_dns_redirect: (dev, p) => configRemoveDnsRedirect(dev, requireParam(p.domain, "domain")),
-};
-
-/** Dispatch a configure action — handler map keeps cognitive complexity low. */
-async function dispatchConfigure(params: ConfigureParams): Promise<QueryResult> {
-  const handler = configureHandlers[params.action];
-  if (!handler) throw new Error(`Unknown configure action: '${params.action}'`);
-  return handler(getDeviceOrThrow(params.device_id), params);
-}
+const ConfigureActions = z.enum(CONFIGURE_ACTIONS);
 
 server.tool(
   "island_configure",
-  `WRITE operation on an Island Router — persists changes with 'write memory'. Requires confirmation_phrase='apply_change'. Actions: add_dhcp (mac, ip, hostname?), remove_dhcp (mac), set_syslog (server_ip, port?, level 0-7, protocol?), remove_syslog, set_hostname (hostname), set_auto_update (days e.g. 'all'/'none'/'monday friday', time_str e.g. '3:00'), set_led (led_level 0-100), set_timezone (timezone e.g. 'US' or 'America/Los_Angeles'), set_ntp (ntp_server), add_dns_redirect (domain + redirect_server — use '0.0.0.0' to block/sinkhole a hostname), remove_dns_redirect (domain — removes the redirect for a specific hostname).`,
+  `WRITE operation on an Island Router via shared core — persists with write memory. Requires confirmation_phrase='apply_change'. Actions: ${CONFIGURE_ACTIONS.join(", ")}.`,
   {
     device_id: z.string().describe("Device ID from inventory"),
     action: ConfigureActions.describe("Configuration action"),
     confirmation_phrase: z.literal("apply_change").describe("Must be exactly 'apply_change' to proceed"),
-    // DHCP params
     mac: z.string().optional().describe("MAC address (for add_dhcp / remove_dhcp)"),
     ip: z.string().optional().describe("IPv4 address (for add_dhcp)"),
     hostname: z.string().optional().describe("Hostname label (for add_dhcp / set_hostname)"),
-    // Syslog params
     server_ip: z.string().optional().describe("Syslog server IP (for set_syslog)"),
     port: z.number().optional().default(514).describe("Syslog port (for set_syslog, default 514)"),
     level: z.number().min(0).max(7).optional().default(7).describe(
       "Syslog severity level 0-7 (0=critical-failure, 4=warning, 5=info, 6=debug, 7=verbose-debug). Default 7.",
     ),
     protocol: z.enum(["udp", "tcp"]).optional().default("udp").describe("Syslog transport protocol"),
-    // Auto-update params
-    days: z.string().optional().describe("For set_auto_update: day(s) — 'all', 'none', or weekday names separated by spaces"),
+    days: z.string().optional().describe("For set_auto_update: day(s) — 'all', 'none', or weekday names"),
     time_str: z.string().optional().describe("For set_auto_update: time as hh:mm (e.g. '3:00')"),
-    // LED params
-    led_level: z.number().min(0).max(100).optional().describe("For set_led: brightness 0 (off) to 100 (full)"),
-    // Timezone params
-    timezone: z.string().optional().describe("For set_timezone: 2-letter country code or timezone name (e.g. 'US', 'America/Los_Angeles')"),
-    // NTP params
+    led_level: z.number().min(0).max(100).optional().describe("For set_led: brightness 0-100"),
+    timezone: z.string().optional().describe("For set_timezone: country code or timezone name"),
     ntp_server: z.string().optional().describe("For set_ntp: NTP server address"),
-    // DNS redirect params
-    domain: z.string().optional().describe("For add_dns_redirect / remove_dns_redirect: domain name to redirect or block (e.g. 'facebook.com', 'ads.example.com')"),
-    redirect_server: z.string().optional().describe("For add_dns_redirect: IP to redirect DNS queries to. Use '0.0.0.0' to block/sinkhole the domain, or a server IP like '192.168.2.50' to redirect"),
+    domain: z.string().optional().describe("For DNS redirect actions: domain name"),
+    redirect_server: z.string().optional().describe("For add_dns_redirect: redirect IP (0.0.0.0 to sinkhole)"),
   },
   async (params) => {
     if (params.confirmation_phrase !== "apply_change") {
       throw new Error("confirmation_phrase must be exactly 'apply_change'");
     }
-    return dispatchConfigure(params);
+    const dev = getDeviceOrThrow(params.device_id);
+    return text(await dispatchConfigure(dev, params));
   },
 );
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Server startup
-// ═════════════════════════════════════════════════════════════════════════════
-
 process.stderr.write(
-  `[island-mcp] Starting v0.4.0 (meta-tool + island-axi) with ${devices.length} device(s)\n`,
+  `[island-mcp] Starting v0.5.0 (core + thin MCP adapter) with ${devices.length} device(s)\n`,
 );
 const transport = new StdioServerTransport();
 await server.connect(transport);

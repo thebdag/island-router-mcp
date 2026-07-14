@@ -1,11 +1,11 @@
-import { parseDhcpReservationsCsv } from "../../parsers/dhcp.js";
 import { parseFieldsFlag, pickFields } from "../format.js";
 import {
+  callCore,
   deviceFromContext,
   parseDeviceArgs,
-  runShow,
   type CliContext,
 } from "../session.js";
+import { queryDhcpReservations } from "../../core/query.js";
 
 const DEFAULT_FIELDS = ["mac", "ip", "hostname", "status"];
 
@@ -20,11 +20,9 @@ export async function dhcpCommand(
   );
   const device = deviceFromContext(context, deviceId);
   const fields = parseFieldsFlag(parsed.flags["fields"], DEFAULT_FIELDS);
+  const data = await callCore(() => queryDhcpReservations(device));
 
-  const output = await runShow(device, "show ip dhcp-reservations csv", 2000);
-  const reservations = parseDhcpReservationsCsv(output);
-
-  if (reservations.length === 0) {
+  if (data.reservations.length === 0) {
     return {
       device: device.id,
       dhcp: "0 DHCP reservations found",
@@ -34,14 +32,12 @@ export async function dhcpCommand(
     };
   }
 
-  const rows = reservations.map((row) =>
-    pickFields(row as unknown as Record<string, unknown>, fields),
-  );
-
   return {
     device: device.id,
-    count: reservations.length,
-    reservations: rows,
+    count: data.reservations.length,
+    reservations: data.reservations.map((row) =>
+      pickFields(row as unknown as Record<string, unknown>, fields),
+    ),
     help: [
       "Run `island-axi configure add-dhcp --mac <mac> --ip <ip> --confirm` to add",
       "Run `island-axi configure remove-dhcp --mac <mac> --confirm` to remove",

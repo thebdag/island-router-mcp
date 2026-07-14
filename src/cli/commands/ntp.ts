@@ -1,15 +1,10 @@
 import {
-  parseNtpAssociations,
-  parseNtpConfig,
-  parseNtpStatus,
-} from "../../parsers/ntp.js";
-import { runCommand } from "../../islandSsh.js";
-import {
+  callCore,
   deviceFromContext,
   parseDeviceArgs,
-  withSession,
   type CliContext,
 } from "../session.js";
+import { queryNtp } from "../../core/query.js";
 
 export async function ntpCommand(
   args: string[],
@@ -17,23 +12,14 @@ export async function ntpCommand(
 ): Promise<Record<string, unknown>> {
   const { deviceId } = parseDeviceArgs(args, ["device"], "ntp");
   const device = deviceFromContext(context, deviceId);
-
-  const raw = await withSession(device, async (s) => ({
-    ntp: await runCommand(s, "show ntp", 2000),
-    status: await runCommand(s, "show ntp status", 2000),
-    associations: await runCommand(s, "show ntp associations", 2000),
-  }));
-
-  const config = parseNtpConfig(raw.ntp);
-  const status = parseNtpStatus(raw.status);
-  const associations = parseNtpAssociations(raw.associations);
+  const data = await callCore(() => queryNtp(device));
 
   return {
     device: device.id,
-    config,
-    status,
-    association_count: associations.length,
-    associations: associations.slice(0, 10).map((a) => ({
+    config: data.ntp_config,
+    status: data.status,
+    association_count: data.associations.length,
+    associations: data.associations.slice(0, 10).map((a) => ({
       remote: a.remote,
       stratum: a.stratum,
       tally: a.tally,

@@ -1,12 +1,12 @@
-import { parseRoutes } from "../../parsers/routes.js";
 import { parseLimit } from "../args.js";
 import { parseFieldsFlag, pickFields } from "../format.js";
 import {
+  callCore,
   deviceFromContext,
   parseDeviceArgs,
-  runShow,
   type CliContext,
 } from "../session.js";
+import { queryRoutes } from "../../core/query.js";
 
 const DEFAULT_FIELDS = ["destination", "gateway", "interface", "type"];
 
@@ -23,8 +23,8 @@ export async function routesCommand(
   const fields = parseFieldsFlag(parsed.flags["fields"], DEFAULT_FIELDS);
   const limit = parseLimit(parsed.flags["limit"], 100, 500);
 
-  const output = await runShow(device, "show ip routes", 2000);
-  const routes = parseRoutes(output);
+  const data = await callCore(() => queryRoutes(device));
+  const routes = data.routes;
 
   if (routes.length === 0) {
     return {
