@@ -6,6 +6,7 @@
 import { runCommand, type DeviceConfig } from "../islandSsh.js";
 import { parseDnsRedirects } from "../parsers/dnsRedirects.js";
 import { parseSyslogConfig } from "../parsers/logs.js";
+import { parseVersion } from "../parsers/system.js";
 import { withSession } from "./session.js";
 import { SYSLOG_LEVEL_NAMES } from "./syslog.js";
 import {
@@ -162,6 +163,58 @@ export async function configAutoUpdate(
   };
 }
 
+/**
+ * Check for / install firmware (or package) updates.
+ * Per Island CLI 2.3.2: `update [<url>]` looks for newer firmware and,
+ * if found, downloads and installs it. No `write memory` (not a config change).
+ * @see https://docs.islandrouter.com/island-router-cli-2.3.2/commands/update.md
+ */
+export async function configUpdate(dev: DeviceConfig, url?: string) {
+  if (url) {
+    validateSafe(url, "url");
+    if (!/^[A-Za-z0-9][A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]*$/.test(url)) {
+      throw new Error(`Invalid update url: '${url}'`);
+    }
+  }
+
+  const cmd = url ? `update ${url}` : "update";
+  const result = await withSession(dev, async (s) => {
+    // Downloads can take a while; keep draining until prompt returns.
+    const updateOut = await runCommand(s, cmd, 8000, 120);
+    const versionOut = await runCommand(s, "show version", 2000);
+    const historyOut = await runCommand(s, "show version history", 3000);
+    return { updateOut, versionOut, historyOut };
+  });
+
+  return {
+    updated: true,
+    device_id: dev.id,
+    url: url ?? null,
+    update_output: result.updateOut,
+    version: parseVersion(result.versionOut),
+    version_history: result.historyOut,
+  };
+}
+
+/**
+ * Stop / clean up an incomplete pending or stuck update.
+ * @see https://docs.islandrouter.com/island-router-cli-2.3.2/commands/clear-update.md
+ */
+export async function configClearUpdate(dev: DeviceConfig) {
+  const result = await withSession(dev, async (s) => {
+    const clearOut = await runCommand(s, "clear update", 3000);
+    const versionOut = await runCommand(s, "show version", 2000);
+    return { clearOut, versionOut };
+  });
+
+  return {
+    cleared: true,
+    device_id: dev.id,
+    clear_output: result.clearOut,
+    version: parseVersion(result.versionOut),
+  };
+}
+
 export async function configLed(dev: DeviceConfig, ledLevel: number) {
   const result = await withSession(dev, async (s) => {
     const configOut = await runCommand(s, `led level ${ledLevel}`, 2000);
@@ -271,6 +324,8 @@ export const CONFIGURE_ACTIONS = [
   "remove_syslog",
   "set_hostname",
   "set_auto_update",
+  "update",
+  "clear_update",
   "set_led",
   "set_timezone",
   "set_ntp",
@@ -296,6 +351,8 @@ export interface ConfigureParams {
   led_level?: number;
   timezone?: string;
   ntp_server?: string;
+  /** Optional firmware/package URL or filename for action=`update`. */
+  url?: string;
 }
 
 type ConfigureHandler = (dev: DeviceConfig, p: ConfigureParams) => Promise<Record<string, unknown>>;
@@ -316,6 +373,8 @@ const configureHandlers: Record<string, ConfigureHandler> = {
   set_hostname: (dev, p) => configHostname(dev, requireParam(p.hostname, "hostname")),
   set_auto_update: (dev, p) =>
     configAutoUpdate(dev, requireParam(p.days, "days"), p.time_str),
+  update: (dev, p) => configUpdate(dev, p.url),
+  clear_update: (dev) => configClearUpdate(dev),
   set_led: (dev, p) => {
     if (p.led_level === undefined) throw new Error("'led_level' required for set_led");
     return configLed(dev, p.led_level);

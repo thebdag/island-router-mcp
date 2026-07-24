@@ -562,9 +562,19 @@ Speed test history supports the same format specifiers as `show history`.
 | `auto-update time <hh:mm>`        | Global  | Set time for automatic updates                   |
 | `show packages`                   | Global  | Show installed packages and versions             |
 | `show packages detail`            | Global  | Show detailed package information                |
-| `update`                          | Global  | Trigger a firmware update                        |
-| `clear update`                    | Global  | Clear pending update state                       |
-| `rollback`                        | Global  | Roll back to previous firmware/config            |
+| `update [<url>]`                  | Global  | Check for / download / install firmware (or package) |
+| `clear update`                    | Global  | Stop and clean up an incomplete update           |
+| `rollback`                        | Global  | Restore firmware+config from an update checkpoint |
+| `show version`                    | Global  | Current hardware + firmware version              |
+| `show version history`            | Global  | Firmware upgrade/rollback history (oldest→newest) |
+
+**Official firmware update check (CLI 2.3.2):** There is **no** read-only “check for updates” show command. Running `update` (no URL) causes Island to look for a newer firmware version and, if found, download and install it. Optional `update <url>` or a simple filename pulls from that source / the Island distribution site.
+
+Refs:
+- https://docs.islandrouter.com/island-router-cli-2.3.2/commands/update.md
+- https://docs.islandrouter.com/island-router-cli-2.3.2/commands/clear-update.md
+- https://docs.islandrouter.com/island-router-cli-2.3.2/commands/show-version.md
+- https://docs.islandrouter.com/island-router-cli-2.3.2/commands/auto-update/auto-update-days.md
 
 **Defaults from official guide:**
 - Auto-update: **3:00 AM local time, any day of the week**
@@ -572,7 +582,11 @@ Speed test history supports the same format specifiers as `show history`.
 
 **Auto-update day values:** `all`, `none`, `sunday`, `monday`, `tuesday`, `wednesday`, `thursday`, `friday`, `saturday`. Multiple days are specified positionally.
 
+With `auto-update days none`, Island still periodically checks; the app can show that newer firmware is available, but it will not install automatically — use `update` or the app to install.
+
 **Firmware update impact note:** Updates may or may not interrupt packet routing. Some updates don't interrupt at all, some cause a short (5-10 second) interruption, and some may require a full reboot.
+
+**Agent surfaces:** `island-axi configure update --confirm` / MCP `island_configure` action `update` (requires confirmation). Stuck update: `clear-update` / `clear_update`.
 
 ---
 

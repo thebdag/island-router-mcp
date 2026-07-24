@@ -218,7 +218,8 @@ EXAMPLES
 
   configure: `island-axi configure <action> [flags] --confirm
 
-WRITE operations. Requires --confirm. Persists with write memory.
+WRITE operations. Requires --confirm. Most actions persist with write memory.
+Firmware update/clear-update do not use write memory (not config changes).
 
 ACTIONS
   add-dhcp --mac <mac> --ip <ip> [--hostname <name>]
@@ -227,6 +228,8 @@ ACTIONS
   remove-syslog
   set-hostname --hostname <name>
   set-auto-update --days <days> [--time <hh:mm>]
+  update [--url <url-or-filename>]
+  clear-update
   set-led --level <0-100>
   set-timezone --timezone <tz>
   set-ntp --server <addr>
@@ -240,6 +243,7 @@ FLAGS
 EXAMPLES
   island-axi configure set-hostname --hostname edge1 --confirm
   island-axi configure add-dhcp --mac aa:bb:cc:dd:ee:ff --ip 192.168.2.50 --confirm
+  island-axi configure update --confirm
 `,
 
   setup: `island-axi setup hooks
