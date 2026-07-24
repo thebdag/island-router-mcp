@@ -58,5 +58,6 @@ commands[16]:
 - List schemas stay minimal; request more with `--fields a,b,c`.
 - Config commands run at the global prompt — no `configure terminal` on Island CLI.
 - Syslog levels are numeric **0–7** (not string names).
+- **Firmware updates (CLI 2.3.2):** there is no read-only “check for updates” show command. Use `island-axi configure update --confirm` (`update [<url>]`) — Island looks for newer firmware and installs if found. Baseline with `show version` / `show version history`. Stuck update: `configure clear-update --confirm`.
 - Install ambient context: `island-axi setup hooks`
-- Deep CLI reference: see skill `island-router-cli` in this repo.
+- Deep CLI reference: see skill `island-router-cli` in this repo (and https://docs.islandrouter.com/island-router-cli-2.3.2).

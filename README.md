@@ -59,7 +59,7 @@ A single tool for all read operations, dispatched by `action`:
 | `command` | Raw text — any allowlisted `show` command (pass `command` param) |
 | `ping` | **Structured** — sent, received, loss%, RTT min/avg/max, TTL |
 
-#### `island_configure` — All Write Operations (9 actions, guarded)
+#### `island_configure` — All Write Operations (guarded)
 
 A single tool for all config mutations, dispatched by `action`. Every call requires `confirmation_phrase: "apply_change"` to prevent accidental changes.
 
@@ -71,9 +71,13 @@ A single tool for all config mutations, dispatched by `action`. Every call requi
 | `remove_syslog` | — | Remove syslog server configuration |
 | `set_hostname` | `hostname` | Set the router hostname |
 | `set_auto_update` | `days`, `time_str?` | Configure auto-update schedule |
+| `update` | `url?` | Check for / install firmware (`update [<url>]` per CLI 2.3.2) |
+| `clear_update` | — | Clear a stuck/incomplete update |
 | `set_led` | `led_level` (0-100) | Set LED brightness |
 | `set_timezone` | `timezone` | Set system timezone |
 | `set_ntp` | `ntp_server` | Set NTP server address |
+| `add_dns_redirect` | `domain`, `redirect_server` | Add DNS redirect / sinkhole |
+| `remove_dns_redirect` | `domain` | Remove DNS redirect |
 
 > **Syslog levels are numeric 0-7:** 0=critical, 1=critical-unrecoverable, 2=recoverable-error, 3=less-severe-error, 4=warning, 5=informational, 6=debug, 7=verbose-debug (default).
 

@@ -44,6 +44,8 @@ export {
   configRemoveSyslog,
   configHostname,
   configAutoUpdate,
+  configUpdate,
+  configClearUpdate,
   configLed,
   configTimezone,
   configNtp,

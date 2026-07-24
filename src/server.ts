@@ -115,6 +115,12 @@ server.tool(
     protocol: z.enum(["udp", "tcp"]).optional().default("udp").describe("Syslog transport protocol"),
     days: z.string().optional().describe("For set_auto_update: day(s) — 'all', 'none', or weekday names"),
     time_str: z.string().optional().describe("For set_auto_update: time as hh:mm (e.g. '3:00')"),
+    url: z
+      .string()
+      .optional()
+      .describe(
+        "For update: optional firmware/package URL or filename (omit to check/install latest from Island)",
+      ),
     led_level: z.number().min(0).max(100).optional().describe("For set_led: brightness 0-100"),
     timezone: z.string().optional().describe("For set_timezone: country code or timezone name"),
     ntp_server: z.string().optional().describe("For set_ntp: NTP server address"),

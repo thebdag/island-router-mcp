@@ -119,7 +119,7 @@ When adding a new operation:
 | `command` | `queryCommand()` | Any allowlisted show command |
 | `ping` | `queryPing()` | ICMP ping from router |
 
-**Configure actions** (11 total):
+**Configure actions** (13 total):
 
 | Action | Core handler (`src/core/`) | Description |
 |---|---|---|
@@ -129,6 +129,8 @@ When adding a new operation:
 | `remove_syslog` | `configRemoveSyslog()` | Remove syslog server |
 | `set_hostname` | `configHostname()` | Set router hostname |
 | `set_auto_update` | `configAutoUpdate()` | Set update days + time |
+| `update` | `configUpdate()` | Check/install firmware (`update [<url>]`) — no write memory |
+| `clear_update` | `configClearUpdate()` | Clear stuck/incomplete update — no write memory |
 | `set_led` | `configLed()` | Set LED brightness (0-100) |
 | `set_timezone` | `configTimezone()` | Set timezone |
 | `set_ntp` | `configNtp()` | Set NTP server |
@@ -155,8 +157,8 @@ All write tools must:
 1. Require `confirmation_phrase: z.literal("apply_change")` (MCP) or `--confirm` (AXI).
 2. Validate all user-supplied values (MAC, IP, hostnames) before sending to the router.
 3. Issue config commands **directly at the global prompt** — do NOT use `configure terminal` or `end`.
-4. Call `write memory` after applying changes.
-5. Return verification output (e.g., `show ip dhcp-reservations` after adding a reservation).
+4. Call `write memory` after applying **configuration** changes. Exceptions: `update` / `clear_update` (firmware lifecycle, not running-config).
+5. Return verification output (e.g., `show ip dhcp-reservations` after adding a reservation; `show version` after `update`).
 
 ### Error Handling
 
@@ -202,6 +204,8 @@ All write tools must:
 | `syslog level info` | `syslog level <0-7>` (numeric severity, not keyword) |
 | `led level <0-3>` | `led level <0-100>` (percentage, not level) |
 | `auto-update schedule <cron>` | `auto-update days <day>...` + `auto-update time <hh:mm>` |
+| `update check` / read-only update probe | `update` (checks for newer firmware and installs if found; optional `[<url>]`) |
+| `show update` | (none) — use `show version` / `show version history`; availability check is `update` |
 | `ip dns mode manual` | `ip dns mode recursive` or `https <name>` or `dnssec` |
 | `configure terminal` required for config | Config commands work from any context |
 | `end` returns from config to EXEC | `end` exits interface context to global |
