@@ -14,6 +14,8 @@ const ACTIONS = [
   "remove-syslog",
   "set-hostname",
   "set-auto-update",
+  "update",
+  "clear-update",
   "set-led",
   "set-timezone",
   "set-ntp",
@@ -30,6 +32,8 @@ const ACTION_TO_CORE: Record<Action, string> = {
   "remove-syslog": "remove_syslog",
   "set-hostname": "set_hostname",
   "set-auto-update": "set_auto_update",
+  update: "update",
+  "clear-update": "clear_update",
   "set-led": "set_led",
   "set-timezone": "set_timezone",
   "set-ntp": "set_ntp",
@@ -44,6 +48,8 @@ const ACTION_FLAGS: Record<Action, string[]> = {
   "remove-syslog": ["device", "confirm"],
   "set-hostname": ["device", "hostname", "confirm"],
   "set-auto-update": ["device", "days", "time", "confirm"],
+  update: ["device", "url", "confirm"],
+  "clear-update": ["device", "confirm"],
   "set-led": ["device", "level", "confirm"],
   "set-timezone": ["device", "timezone", "confirm"],
   "set-ntp": ["device", "server", "confirm"],
@@ -153,6 +159,7 @@ export async function configureCommand(
       protocol: flagString(flags, "protocol"),
       days: flagString(flags, "days"),
       time_str: flagString(flags, "time"),
+      url: flagString(flags, "url"),
       led_level: action === "set-led" && levelStr
         ? Number.parseInt(levelStr, 10)
         : undefined,
@@ -168,6 +175,9 @@ export async function configureCommand(
   delete compact.write_output;
   delete compact.days_output;
   delete compact.time_output;
+  delete compact.update_output;
+  delete compact.clear_output;
+  delete compact.version_history;
   if (typeof compact.reservations === "string") delete compact.reservations;
   if (typeof compact.ntp_config === "string") delete compact.ntp_config;
 
@@ -178,6 +188,11 @@ export async function configureCommand(
     "set-ntp": ["Run `island-axi ntp` to verify sync status"],
     "add-dns-redirect": ["Run `island-axi dns-redirects` to list rules"],
     "remove-dns-redirect": ["Run `island-axi dns-redirects` to verify"],
+    update: [
+      "Run `island-axi show version` and `island-axi show \"version history\"` to verify",
+      "If an update is stuck: `island-axi configure clear-update --confirm`",
+    ],
+    "clear-update": ["Run `island-axi show version` to verify current firmware"],
   };
   if (helpByAction[action]) compact.help = helpByAction[action];
 
