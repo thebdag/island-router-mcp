@@ -1,6 +1,7 @@
 /**
  * Island Router core — shared actions for MCP and AXI CLI.
  * Prefer this layer for new router capabilities; adapt at the surface.
+ * MCP progressive discovery lives in actionCatalog.ts.
  */
 
 export { withSession } from "./session.js";
@@ -33,6 +34,20 @@ export {
   queryCommand,
   queryPing,
 } from "./query.js";
+export {
+  ACTION_CATALOG,
+  ActionCatalogError,
+  describeAction,
+  formatActionError,
+  formatDescribe,
+  listActions,
+  pickActionParams,
+  type ActionErrorPayload,
+  type ActionKind,
+  type ActionSpec,
+  type CompactAction,
+  type ListActionsResult,
+} from "./actionCatalog.js";
 export {
   CONFIGURE_ACTIONS,
   type ConfigureAction,

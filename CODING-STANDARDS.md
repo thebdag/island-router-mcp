@@ -19,7 +19,7 @@ Development conventions for the Island Router MCP Server + `island-axi` CLI.
 ```
 src/
   core/                 # ★ Shared router actions (source of truth)
-  server.ts             # Thin MCP adapter — meta-tools only
+  server.ts             # Thin MCP adapter — progressive meta-tools
   devices.ts            # Shared device inventory loader
   allowedCommands.ts    # Shared show allowlist
   islandSsh.ts          # SSH session lifecycle — no business logic
@@ -27,7 +27,7 @@ src/
   parsers/              # Pure CLI → typed data
 ```
 
-- **core/** — implement new router ops here (`dispatchQuery` / `dispatchConfigure`).
+- **core/** — implement new router ops here (`dispatchQuery` / `dispatchConfigure`) and add an `ActionSpec` in `actionCatalog.ts`.
 - **server.ts** — MCP schemas + call into core; no SSH/business logic.
 - **cli/** — flag parsing, truncation, `help[]`; call core via `callCore()`.
 - **Parsers** — pure `(raw: string) => StructuredType[]`. No SSH / I/O imports.
@@ -56,21 +56,23 @@ Every new router capability should land on **both** surfaces unless intentionall
 
 1. Parser in `src/parsers/` if structured.
 2. Handler + `QUERY_ACTIONS` / `dispatchQuery` case in **`src/core/query.ts`**.
-3. MCP picks up the action via `z.enum(QUERY_ACTIONS)` in `server.ts` (no duplicate handler).
-4. AXI: presentation command in `src/cli/commands/`, register in `island-axi.ts` + `help.ts`.
-5. Raw show allowlist: `src/allowedCommands.ts` only.
-6. Update inventories, `CHANGELOG.md`, skills if UX changed.
-7. AXI defaults: 3–4 fields, `count`, definitive empty states, `help[]`, `--full`.
+3. **`ActionSpec` in `src/core/actionCatalog.ts`** (summary, params, example). Do not add per-action fields to `island_query`.
+4. MCP picks up the action via `z.enum(QUERY_ACTIONS)` in `server.ts` (no duplicate handler).
+5. AXI: presentation command in `src/cli/commands/`, register in `island-axi.ts` + `help.ts`.
+6. Raw show allowlist: `src/allowedCommands.ts` only.
+7. Update inventories, `CHANGELOG.md`, skills if UX changed.
+8. AXI defaults: 3–4 fields, `count`, definitive empty states, `help[]`, `--full`.
 
 ### Adding a write (configure) action
 
 1. Validate in **`src/core/validate.ts`** before SSH.
 2. Handler + `CONFIGURE_ACTIONS` / `dispatchConfigure` in **`src/core/configure.ts`**.
-3. MCP: confirmation_phrase only in `server.ts`; dispatch into core.
-4. AXI: `configure <kebab-action>` flags + `--confirm`, map to snake_case core action.
-5. Global prompt → `write memory` → verify show.
-6. Prefer idempotent re-apply → success where the router allows it.
-7. Update inventories, changelog, skills as above.
+3. **`ActionSpec` in `src/core/actionCatalog.ts`**. Do not add per-action fields to `island_configure`.
+4. MCP: confirmation_phrase only in `server.ts`; dispatch into core with `params`.
+5. AXI: `configure <kebab-action>` flags + `--confirm`, map to snake_case core action.
+6. Global prompt → `write memory` → verify show.
+7. Prefer idempotent re-apply → success where the router allows it.
+8. Update inventories, changelog, skills as above.
 
 ### AXI CLI checklist ([axi.md](https://axi.md/))
 
@@ -83,19 +85,23 @@ Every new router capability should land on **both** surfaces unless intentionall
 
 ## MCP Tool Design
 
-### Meta-Tool Pattern
+### Progressive meta-tools
 
-Tools are consolidated into as few MCP tool definitions as possible to reduce token overhead:
+`tools/list` stays slim. Agents discover cheaply, inspect one action, then invoke.
 
-1. **`island_list_devices`** — no parameters, no SSH, kept separate for zero-cost discovery.
-2. **`island_query`** — all read-only operations, dispatched by `action` enum.
-3. **`island_configure`** — all write operations, dispatched by `action` enum, guarded.
+1. **`island_list_devices`** — no parameters, no SSH, kept separate for zero-cost inventory.
+2. **`island_actions`** — catalog (optional `query` / `kind`) or describe (`action=<name>`). No SSH.
+3. **`island_query`** — read-only invoke: `device_id`, `action` enum, `params` record.
+4. **`island_configure`** — write invoke: `device_id`, `action` enum, `confirmation_phrase: "apply_change"`, `params` record.
+
+Per-action fields live in **`src/core/actionCatalog.ts`**, not in invoke Zod schemas. Validation / unknown-param errors return JSON with `error`, `required`, `optional`, `example`, and `help` pointing at `island_actions`.
 
 When adding a new operation:
-- **Read-only?** Add to `QUERY_ACTIONS` + handler in `src/core/query.ts`.
-- **Write?** Add to `CONFIGURE_ACTIONS` + handler in `src/core/configure.ts`.
+- **Read-only?** Add to `QUERY_ACTIONS` + handler in `src/core/query.ts` + `ActionSpec` in `actionCatalog.ts`.
+- **Write?** Add to `CONFIGURE_ACTIONS` + handler in `src/core/configure.ts` + `ActionSpec` in `actionCatalog.ts`.
 - **Do not** put SSH/business logic in `server.ts` or duplicate it in CLI commands.
 - **Do not** register a new top-level `server.tool()` unless the schema shape is fundamentally different.
+- **Do not** add per-action fields to `island_query` / `island_configure`.
 
 ### Current Action Inventory
 
@@ -162,7 +168,7 @@ All write tools must:
 
 ### Error Handling
 
-- MCP: throw descriptive `Error` objects — the MCP SDK serializes them to the client.
+- MCP: return structured JSON for action errors (`error`, schema fields, `help`) so the model can retry without a throw. Device/transport failures may still throw.
 - AXI: throw `AxiError` with code + suggestions (stdout structured error).
 - Validate inputs early (before opening SSH sessions).
 - Use `withSession()` to guarantee `closeSession()` runs even on errors.

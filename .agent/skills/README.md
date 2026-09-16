@@ -7,7 +7,7 @@ Primary skill tree for this repo. Codex / OpenCode also resolve `.agents/skills/
 | [`island-axi`](./island-axi/SKILL.md) | AXI CLI | Operating or extending `island-axi` |
 | [`axi`](./axi/SKILL.md) | Standards | Designing agent-ergonomic CLIs ([axi.md](https://axi.md/)) |
 | [`island-router-cli`](./island-router-cli/SKILL.md) | Island CLI | Exact command syntax (fw 2.3.2) |
-| [`skill-mcp-builder`](./skill-mcp-builder/SKILL.md) | MCP | Building / changing MCP tools |
+| [`skill-mcp-builder`](./skill-mcp-builder/SKILL.md) | MCP | Building / changing MCP tools; progressive catalog/describe |
 | [`skill-network-fleet`](./skill-network-fleet/SKILL.md) | Networking | Multi-device fleet / drift |
 | [`skill-firmware-differ`](./skill-firmware-differ/SKILL.md) | Networking | Firmware upgrades |
 | [`skill-network-traffic-etl`](./skill-network-traffic-etl/SKILL.md) | Analytics | Traffic ETL |

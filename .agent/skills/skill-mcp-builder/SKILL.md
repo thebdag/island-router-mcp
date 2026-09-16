@@ -1,6 +1,6 @@
 ---
 name: skill-mcp-builder
-description: "Build MCP (Model Context Protocol) servers in TypeScript or Python. Covers project scaffolding, tool/resource/prompt registration, Zod schema design, meta-tool patterns, transport setup, testing, and mcp_config.json integration. Use when creating a new MCP server, adding tools to an existing server, or debugging MCP tool registration."
+description: "Build MCP servers (TypeScript/Python) with tool/resource/prompt registration, Zod schemas, meta-tool patterns, and progressive catalog/describe discovery. Use when creating or extending an MCP server or debugging tool registration."
 category: development
 risk: safe
 source: community
@@ -219,9 +219,10 @@ server.tool(
     action: z.enum(["create", "update", "delete"]),
     confirmation_phrase: z.literal("apply_change")
       .describe("Must be exactly 'apply_change' to proceed"),
-    // ... other params
+    params: z.record(z.union([z.string(), z.number(), z.boolean()])).optional()
+      .describe("Action fields. Call my_actions with action=<name> for the schema."),
   },
-  async ({ action, confirmation_phrase, ...params }) => {
+  async ({ action, confirmation_phrase, params }) => {
     if (confirmation_phrase !== "apply_change") {
       throw new Error("confirmation_phrase must be exactly 'apply_change'");
     }
@@ -229,6 +230,18 @@ server.tool(
   },
 );
 ```
+
+### Progressive tool calling
+
+Do not dump every action field into `tools/list`. Keep invoke schemas slim (`action` + `params`) and add one discovery tool:
+
+- Catalog (no `action`): `{name, kind, summary, required[]}`
+- Describe (`action=<name>`): full `params[]`, `example`, which invoke tool
+- Validation errors: return JSON with `error`, `required`, `optional`, `example`, `help` — do not throw
+
+This repo: `island_actions` + slim `island_query` / `island_configure`. Specs live in `src/core/actionCatalog.ts`.
+
+Load [patterns.md](patterns.md) for the catalog + slim-invoke implementation.
 
 ---
 
@@ -365,6 +378,7 @@ Before publishing an MCP server:
 
 - [ ] All tools have descriptive names (snake_case) and descriptions
 - [ ] All Zod parameters have `.describe()` annotations
+- [ ] Invoke tools are slim (`action` + `params`); per-action fields live in a catalog spec
 - [ ] Write operations require an explicit confirmation gate
 - [ ] `process.stderr.write` used instead of `console.log`
 - [ ] `devices.example.json` or equivalent template committed
