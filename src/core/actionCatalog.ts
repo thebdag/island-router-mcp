@@ -54,19 +54,28 @@ export class ActionCatalogError extends Error {
   }
 }
 
+/** RFC 5737 TEST-NET-1 — documentation-only; catalog examples, not live endpoints. */
+const EXAMPLE_IPV4 = "192.0.2.1";
+const EXAMPLE_DHCP_IPV4 = "192.0.2.50";
+const EXAMPLE_SYSLOG_IPV4 = "192.0.2.10";
+
+function makeSpec(
+  name: string,
+  kind: ActionKind,
+  summary: string,
+  params: readonly ActionParamSpec[] = [],
+  example: Record<string, unknown> = {},
+): ActionSpec {
+  return { name, kind, summary, params, example };
+}
+
 const QUERY_SPECS: ActionSpec[] = [
-  {
-    name: "status",
-    kind: "query",
-    summary: "Full overview (interfaces, routes, neighbors, version, stats, clock)",
-    params: [],
-    example: {},
-  },
-  {
-    name: "interfaces",
-    kind: "query",
-    summary: "Parsed interface table; set detail for TX/RX stats",
-    params: [
+  makeSpec("status", "query", "Full overview (interfaces, routes, neighbors, version, stats, clock)"),
+  makeSpec(
+    "interfaces",
+    "query",
+    "Parsed interface table; set detail for TX/RX stats",
+    [
       {
         name: "detail",
         type: "boolean",
@@ -74,69 +83,25 @@ const QUERY_SPECS: ActionSpec[] = [
         description: "true for per-interface TX/RX counters",
       },
     ],
-    example: { detail: false },
-  },
-  {
-    name: "neighbors",
-    kind: "query",
-    summary: "Parsed ARP / neighbor table",
-    params: [],
-    example: {},
-  },
-  {
-    name: "routes",
-    kind: "query",
-    summary: "Parsed routing table",
-    params: [],
-    example: {},
-  },
-  {
-    name: "logs",
-    kind: "query",
-    summary: "Recent log entries plus syslog config",
-    params: [],
-    example: {},
-  },
-  {
-    name: "config",
-    kind: "query",
-    summary: "Full running-config text",
-    params: [],
-    example: {},
-  },
-  {
-    name: "config_diff",
-    kind: "query",
-    summary: "Running vs startup config diff",
-    params: [],
-    example: {},
-  },
-  {
-    name: "vpns",
-    kind: "query",
-    summary: "VPN peer status",
-    params: [],
-    example: {},
-  },
-  {
-    name: "dhcp_reservations",
-    kind: "query",
-    summary: "DHCP reservations (CSV-parsed)",
-    params: [],
-    example: {},
-  },
-  {
-    name: "speedtest",
-    kind: "query",
-    summary: "Speed test history",
-    params: [],
-    example: {},
-  },
-  {
-    name: "history",
-    kind: "query",
-    summary: "Event history JSON for a time range",
-    params: [
+    { detail: false },
+  ),
+  ...(
+    [
+      ["neighbors", "Parsed ARP / neighbor table"],
+      ["routes", "Parsed routing table"],
+      ["logs", "Recent log entries plus syslog config"],
+      ["config", "Full running-config text"],
+      ["config_diff", "Running vs startup config diff"],
+      ["vpns", "VPN peer status"],
+      ["dhcp_reservations", "DHCP reservations (CSV-parsed)"],
+      ["speedtest", "Speed test history"],
+    ] as const
+  ).map(([name, summary]) => makeSpec(name, "query", summary)),
+  makeSpec(
+    "history",
+    "query",
+    "Event history JSON for a time range",
+    [
       {
         name: "time",
         type: "string",
@@ -144,27 +109,15 @@ const QUERY_SPECS: ActionSpec[] = [
         description: "Range such as 1h, 1d, 30m, 1w (default 1h)",
       },
     ],
-    example: { time: "1h" },
-  },
-  {
-    name: "ntp",
-    kind: "query",
-    summary: "NTP config, sync status, and associations",
-    params: [],
-    example: {},
-  },
-  {
-    name: "dns_redirects",
-    kind: "query",
-    summary: "DNS redirect rules (hostname → server)",
-    params: [],
-    example: {},
-  },
-  {
-    name: "command",
-    kind: "query",
-    summary: "Run an allowlisted show command",
-    params: [
+    { time: "1h" },
+  ),
+  makeSpec("ntp", "query", "NTP config, sync status, and associations"),
+  makeSpec("dns_redirects", "query", "DNS redirect rules (hostname → server)"),
+  makeSpec(
+    "command",
+    "query",
+    "Run an allowlisted show command",
+    [
       {
         name: "command",
         type: "string",
@@ -172,13 +125,13 @@ const QUERY_SPECS: ActionSpec[] = [
         description: "Allowlisted show command (e.g. 'show version')",
       },
     ],
-    example: { command: "show version" },
-  },
-  {
-    name: "ping",
-    kind: "query",
-    summary: "ICMP ping from the router",
-    params: [
+    { command: "show version" },
+  ),
+  makeSpec(
+    "ping",
+    "query",
+    "ICMP ping from the router",
+    [
       {
         name: "target",
         type: "string",
@@ -186,16 +139,16 @@ const QUERY_SPECS: ActionSpec[] = [
         description: "IP or hostname to ping",
       },
     ],
-    example: { target: "1.1.1.1" },
-  },
+    { target: EXAMPLE_IPV4 },
+  ),
 ];
 
 const CONFIGURE_SPECS: ActionSpec[] = [
-  {
-    name: "add_dhcp",
-    kind: "configure",
-    summary: "Add a MAC → IP DHCP reservation",
-    params: [
+  makeSpec(
+    "add_dhcp",
+    "configure",
+    "Add a MAC → IP DHCP reservation",
+    [
       { name: "mac", type: "string", required: true, description: "MAC address" },
       { name: "ip", type: "string", required: true, description: "IPv4 address to reserve" },
       {
@@ -205,22 +158,20 @@ const CONFIGURE_SPECS: ActionSpec[] = [
         description: "Optional hostname label",
       },
     ],
-    example: { mac: "aa:bb:cc:dd:ee:ff", ip: "192.168.1.50", hostname: "nas" },
-  },
-  {
-    name: "remove_dhcp",
-    kind: "configure",
-    summary: "Remove a DHCP reservation",
-    params: [
-      { name: "mac", type: "string", required: true, description: "MAC address to unreserve" },
-    ],
-    example: { mac: "aa:bb:cc:dd:ee:ff" },
-  },
-  {
-    name: "set_syslog",
-    kind: "configure",
-    summary: "Configure syslog forwarding (numeric level 0–7)",
-    params: [
+    { mac: "aa:bb:cc:dd:ee:ff", ip: EXAMPLE_DHCP_IPV4, hostname: "nas" },
+  ),
+  makeSpec(
+    "remove_dhcp",
+    "configure",
+    "Remove a DHCP reservation",
+    [{ name: "mac", type: "string", required: true, description: "MAC address to unreserve" }],
+    { mac: "aa:bb:cc:dd:ee:ff" },
+  ),
+  makeSpec(
+    "set_syslog",
+    "configure",
+    "Configure syslog forwarding (numeric level 0–7)",
+    [
       { name: "server_ip", type: "string", required: true, description: "Syslog server IPv4" },
       {
         name: "port",
@@ -242,29 +193,21 @@ const CONFIGURE_SPECS: ActionSpec[] = [
         enum: ["udp", "tcp"],
       },
     ],
-    example: { server_ip: "192.168.1.10", port: 514, level: 5, protocol: "udp" },
-  },
-  {
-    name: "remove_syslog",
-    kind: "configure",
-    summary: "Remove syslog server configuration",
-    params: [],
-    example: {},
-  },
-  {
-    name: "set_hostname",
-    kind: "configure",
-    summary: "Set router hostname",
-    params: [
-      { name: "hostname", type: "string", required: true, description: "New hostname" },
-    ],
-    example: { hostname: "island-edge-1" },
-  },
-  {
-    name: "set_auto_update",
-    kind: "configure",
-    summary: "Set auto-update days and optional time",
-    params: [
+    { server_ip: EXAMPLE_SYSLOG_IPV4, port: 514, level: 5, protocol: "udp" },
+  ),
+  makeSpec("remove_syslog", "configure", "Remove syslog server configuration"),
+  makeSpec(
+    "set_hostname",
+    "configure",
+    "Set router hostname",
+    [{ name: "hostname", type: "string", required: true, description: "New hostname" }],
+    { hostname: "island-edge-1" },
+  ),
+  makeSpec(
+    "set_auto_update",
+    "configure",
+    "Set auto-update days and optional time",
+    [
       {
         name: "days",
         type: "string",
@@ -278,13 +221,13 @@ const CONFIGURE_SPECS: ActionSpec[] = [
         description: "Time as hh:mm (e.g. '3:00')",
       },
     ],
-    example: { days: "all", time_str: "3:00" },
-  },
-  {
-    name: "update",
-    kind: "configure",
-    summary: "Check for / install firmware (update [<url>]); no write memory",
-    params: [
+    { days: "all", time_str: "3:00" },
+  ),
+  makeSpec(
+    "update",
+    "configure",
+    "Check for / install firmware (update [<url>]); no write memory",
+    [
       {
         name: "url",
         type: "string",
@@ -292,20 +235,13 @@ const CONFIGURE_SPECS: ActionSpec[] = [
         description: "Optional firmware/package URL or filename",
       },
     ],
-    example: {},
-  },
-  {
-    name: "clear_update",
-    kind: "configure",
-    summary: "Stop a stuck or incomplete firmware update; no write memory",
-    params: [],
-    example: {},
-  },
-  {
-    name: "set_led",
-    kind: "configure",
-    summary: "Set LED brightness 0–100",
-    params: [
+  ),
+  makeSpec("clear_update", "configure", "Stop a stuck or incomplete firmware update; no write memory"),
+  makeSpec(
+    "set_led",
+    "configure",
+    "Set LED brightness 0–100",
+    [
       {
         name: "led_level",
         type: "number",
@@ -313,13 +249,13 @@ const CONFIGURE_SPECS: ActionSpec[] = [
         description: "Brightness 0–100",
       },
     ],
-    example: { led_level: 50 },
-  },
-  {
-    name: "set_timezone",
-    kind: "configure",
-    summary: "Set system timezone",
-    params: [
+    { led_level: 50 },
+  ),
+  makeSpec(
+    "set_timezone",
+    "configure",
+    "Set system timezone",
+    [
       {
         name: "timezone",
         type: "string",
@@ -327,13 +263,13 @@ const CONFIGURE_SPECS: ActionSpec[] = [
         description: "Country code or timezone name",
       },
     ],
-    example: { timezone: "US/Pacific" },
-  },
-  {
-    name: "set_ntp",
-    kind: "configure",
-    summary: "Set NTP server address",
-    params: [
+    { timezone: "US/Pacific" },
+  ),
+  makeSpec(
+    "set_ntp",
+    "configure",
+    "Set NTP server address",
+    [
       {
         name: "ntp_server",
         type: "string",
@@ -341,13 +277,13 @@ const CONFIGURE_SPECS: ActionSpec[] = [
         description: "NTP server hostname or IP",
       },
     ],
-    example: { ntp_server: "time.cloudflare.com" },
-  },
-  {
-    name: "add_dns_redirect",
-    kind: "configure",
-    summary: "Add DNS redirect / sinkhole",
-    params: [
+    { ntp_server: "time.cloudflare.com" },
+  ),
+  makeSpec(
+    "add_dns_redirect",
+    "configure",
+    "Add DNS redirect / sinkhole",
+    [
       { name: "domain", type: "string", required: true, description: "Domain to redirect" },
       {
         name: "redirect_server",
@@ -356,17 +292,15 @@ const CONFIGURE_SPECS: ActionSpec[] = [
         description: "Redirect IP (0.0.0.0 to sinkhole)",
       },
     ],
-    example: { domain: "ads.example.com", redirect_server: "0.0.0.0" },
-  },
-  {
-    name: "remove_dns_redirect",
-    kind: "configure",
-    summary: "Remove DNS redirect for a domain",
-    params: [
-      { name: "domain", type: "string", required: true, description: "Domain to un-redirect" },
-    ],
-    example: { domain: "ads.example.com" },
-  },
+    { domain: "ads.example.com", redirect_server: "0.0.0.0" },
+  ),
+  makeSpec(
+    "remove_dns_redirect",
+    "configure",
+    "Remove DNS redirect for a domain",
+    [{ name: "domain", type: "string", required: true, description: "Domain to un-redirect" }],
+    { domain: "ads.example.com" },
+  ),
 ];
 
 export const ACTION_CATALOG: readonly ActionSpec[] = [...QUERY_SPECS, ...CONFIGURE_SPECS];

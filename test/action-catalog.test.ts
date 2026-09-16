@@ -119,7 +119,7 @@ describe("pickActionParams", () => {
     } catch (err) {
       expect((err as ActionCatalogError).payload.error).toContain("unknown param(s): extra");
       expect((err as ActionCatalogError).payload.required).toEqual(["target"]);
-      expect((err as ActionCatalogError).payload.example).toEqual({ target: "1.1.1.1" });
+      expect((err as ActionCatalogError).payload.example).toEqual({ target: "192.0.2.1" });
     }
   });
 
@@ -153,7 +153,7 @@ describe("formatActionError", () => {
     expect(payload.optional).toEqual(["hostname"]);
     expect(payload.example).toEqual({
       mac: "aa:bb:cc:dd:ee:ff",
-      ip: "192.168.1.50",
+      ip: "192.0.2.50",
       hostname: "nas",
     });
     expect(payload.help).toBe("Call island_actions with action='add_dhcp' for the full schema");

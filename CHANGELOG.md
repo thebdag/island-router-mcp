@@ -16,6 +16,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
   - MCP: same actions via `island_configure` with `confirmation_phrase: "apply_change"`
 - **Progressive MCP tool calling** — `island_actions` catalog/describe; invoke tools take `params` instead of every action field
 
+### Fixed
+- Catalog examples use RFC 5737 documentation IPv4; query/configure specs share a helper so SonarCloud no longer flags copy-paste duplication in `actionCatalog.ts`
+
 ### Changed
 - **Breaking MCP:** `island_query` / `island_configure` no longer accept per-action top-level fields (`mac`, `command`, …). Pass them in `params`. Call `island_actions` (optional `query` / `kind`) for the compact catalog, or `action=<name>` for the full schema and example. Validation errors return JSON (`error`, `required`, `optional`, `example`, `help`) instead of throwing.
 - **Agent orientation**: added `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`; rewrote `REPOMAP.md`; expanded `CODING-STANDARDS.md` with dual-surface (MCP + AXI) extension playbooks and doc hygiene rules
