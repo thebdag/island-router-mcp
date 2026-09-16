@@ -32,8 +32,9 @@ island-router-mcp/
 │   ├── core/                 # ★ Shared action core (add capabilities here)
 │   │   ├── query.ts          # dispatchQuery + read handlers
 │   │   ├── configure.ts      # dispatchConfigure + write handlers
+│   │   ├── actionCatalog.ts  # MCP list/describe + param pick
 │   │   ├── session.ts / validate.ts / syslog.ts / index.ts
-│   ├── server.ts             # Thin MCP adapter (3 meta-tools)
+│   ├── server.ts             # Thin MCP adapter (4 meta-tools)
 │   ├── devices.ts            # Shared inventory
 │   ├── allowedCommands.ts    # Shared show allowlist (edit once)
 │   ├── islandSsh.ts          # SSH interactive shell
@@ -67,7 +68,7 @@ island-router-mcp/
 ```
 ┌──────────────────────┐     ┌──────────────────────┐
 │ MCP (optional)       │     │ island-axi (primary) │
-│ thin meta-tools      │     │ TOON + help[]        │
+│ progressive meta-tools│     │ TOON + help[]        │
 └──────────┬───────────┘     └──────────┬───────────┘
            │                            │
            └────────────┬───────────────┘
@@ -80,13 +81,14 @@ island-router-mcp/
          Island Router (Global + Interface · no conf t)
 ```
 
-### MCP (v0.5.0 thin adapter)
+### MCP (progressive meta-tools)
 
 | Tool | Role |
 | --- | --- |
 | `island_list_devices` | Inventory, no SSH |
-| `island_query` | 15 read actions (status … ping, dns_redirects) |
-| `island_configure` | 11 write actions; requires `confirmation_phrase=apply_change` |
+| `island_actions` | Compact catalog or per-action schema (`action=<name>`), no SSH |
+| `island_query` | 15 read actions via `action` + `params` |
+| `island_configure` | 13 write actions; `params` + `confirmation_phrase=apply_change` |
 
 ### AXI CLI
 
@@ -127,12 +129,13 @@ Index: `.agent/skills/README.md`.
 ## Extend checklist (summary)
 
 1. Parser (if needed) in `src/parsers/`
-2. **Core handler** in `src/core/query.ts` or `configure.ts` (+ dispatch)
-3. MCP: action already flows if added to `QUERY_ACTIONS` / `CONFIGURE_ACTIONS`
-4. AXI: presentation command in `src/cli/commands/` + register + `help.ts`
-5. Allowlist only via `src/allowedCommands.ts`
-6. Docs: `CODING-STANDARDS.md`, `CHANGELOG.md`, skills if UX changed
-7. `npm run build && npm test`
+3. **Core handler** in `src/core/query.ts` or `configure.ts` (+ dispatch)
+4. **Catalog spec** in `src/core/actionCatalog.ts` (MCP discovery / slim invoke)
+5. MCP: action already flows if added to `QUERY_ACTIONS` / `CONFIGURE_ACTIONS` + catalog
+6. AXI: presentation command in `src/cli/commands/` + register + `help.ts`
+7. Allowlist only via `src/allowedCommands.ts`
+8. Docs: `CODING-STANDARDS.md`, `CHANGELOG.md`, skills if UX changed
+9. `npm run build && npm test`
 
 See `AGENTS.md` for the full decision tree and definition of done.
 

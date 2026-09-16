@@ -32,20 +32,24 @@ Both AXI and MCP call the same **`src/core/`** action layer — add router capab
 
 ### 🔧 MCP Server (thin adapter)
 
-Optional MCP adapter for hosts that only speak MCP. Same core actions as `island-axi`, exposed as **3 meta-tools**.
+Optional MCP adapter for hosts that only speak MCP. Same core actions as `island-axi`, exposed as **4 meta-tools** with progressive discovery.
 
 #### `island_list_devices`
 
 Lists configured devices from the inventory. No SSH connection required.
 
-#### `island_query` — All Read-Only Operations (14 actions)
+#### `island_actions` — Catalog / describe (no SSH)
 
-A single tool for all read operations, dispatched by `action`:
+Compact action index by default. Optional `query` (substring) and `kind` (`query` | `configure`). Pass `action=<name>` for the full param schema, example, and which invoke tool to call. Empty filters return `0 actions matched '…'`.
+
+#### `island_query` — Read-only invoke
+
+`device_id`, `action` enum, `params` (action-specific fields only). Call `island_actions` first if you do not know the schema.
 
 | Action | What It Returns |
 | --- | --- |
 | `status` | **Structured** — parsed interfaces, routes, neighbors, version + raw stats, clock |
-| `interfaces` | **Structured** — name, status, protocol, description (+ TX/RX with `detail: true`) |
+| `interfaces` | **Structured** — name, status, protocol, description (`params.detail: true` for TX/RX) |
 | `neighbors` | **Structured** — IP, MAC, interface, state per neighbor |
 | `routes` | **Structured** — destination, mask, gateway, interface, metric, type |
 | `logs` | **Structured** — timestamp, severity, facility, message + syslog config |
@@ -54,14 +58,15 @@ A single tool for all read operations, dispatched by `action`:
 | `vpns` | **Structured** — peers with endpoints, transfer bytes, handshake status |
 | `dhcp_reservations` | **Structured** — MAC, IP, hostname, interface, status per reservation |
 | `speedtest` | **Structured** — download/upload Mbps, latency, timestamp per entry |
-| `history` | JSON — event history from router (pass `time` e.g. `1h`, `1d`, `1w`) |
+| `history` | JSON — event history (`params.time` e.g. `1h`, `1d`, `1w`) |
 | `ntp` | **Structured** — server config, sync status, peer associations |
-| `command` | Raw text — any allowlisted `show` command (pass `command` param) |
-| `ping` | **Structured** — sent, received, loss%, RTT min/avg/max, TTL |
+| `dns_redirects` | **Structured** — DNS redirect rules (hostname → server) |
+| `command` | Raw text — allowlisted show command (`params.command`) |
+| `ping` | **Structured** — sent, received, loss%, RTT min/avg/max, TTL (`params.target`) |
 
-#### `island_configure` — All Write Operations (guarded)
+#### `island_configure` — Write invoke (guarded)
 
-A single tool for all config mutations, dispatched by `action`. Every call requires `confirmation_phrase: "apply_change"` to prevent accidental changes.
+`device_id`, `action` enum, `confirmation_phrase: "apply_change"`, `params`. Missing/unknown params return JSON with `required`, `example`, and `help` pointing at `island_actions`.
 
 | Action | Params | What It Does |
 | --- | --- | --- |
@@ -81,9 +86,9 @@ A single tool for all config mutations, dispatched by `action`. Every call requi
 
 > **Syslog levels are numeric 0-7:** 0=critical, 1=critical-unrecoverable, 2=recoverable-error, 3=less-severe-error, 4=warning, 5=informational, 6=debug, 7=verbose-debug (default).
 
-#### Why Meta-Tools?
+#### Why progressive meta-tools?
 
-Traditional MCP servers register one tool per operation (13+ tools). Each tool's schema is serialized into every LLM request, consuming tokens even when unused. The meta-tool pattern consolidates related operations behind a single schema with an `action` discriminator — **reducing schema overhead by ~80%** while preserving full functionality.
+Traditional MCP servers register one tool per operation (13+ tools). Each schema is serialized into every LLM request. This server used to dump every query/configure field onto two fat invoke tools. Progressive calling keeps **four small tools** in `tools/list`: a catalog, a describe path, and slim invoke schemas. Agents load one action's fields only when they call `island_actions` or hit a validation error.
 
 ### 📖 Agent Skills
 
@@ -266,7 +271,7 @@ island-router-mcp/                # Workspace root
 │               └── cli_commands_flat.txt
 │
 └── src/                          # TypeScript source
-    ├── server.ts                 # 3 meta-tools with action dispatch
+    ├── server.ts                 # 4 meta-tools: list devices, actions catalog, query, configure
     ├── islandSsh.ts              # Interactive shell SSH client
     └── parsers/                  # CLI output → structured JSON (7 modules, 15 functions)
         ├── interfaces.ts         # show interface / show interface summary
@@ -282,7 +287,7 @@ island-router-mcp/                # Workspace root
 - The Island Router has a **2-context CLI** (Global + Interface), not a Cisco-style 4-level hierarchy. Configuration commands work directly from the global prompt — `configure terminal` is unnecessary.
 - This server uses ssh2's interactive `shell()` mode (not `exec()`) because the CLI is stateful across commands.
 - Config commands are issued directly without `configure terminal` → `end` wrappers, per the official CLI Reference Guide.
-- **11 of 14 query actions return structured JSON**, not raw CLI text. Only `config`, `config_diff`, and `command` return raw text (intentionally — they are unstructured by nature).
+- **12 of 15 query actions return structured JSON**, not raw CLI text. Only `config`, `config_diff`, and `command` return raw text (intentionally — they are unstructured by nature).
 
 ## Structured Parsers
 

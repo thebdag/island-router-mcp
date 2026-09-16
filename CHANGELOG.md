@@ -14,8 +14,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
   - `clear_update` — `clear update` stops a stuck/incomplete update
   - AXI: `configure update [--url ...] --confirm`, `configure clear-update --confirm`
   - MCP: same actions via `island_configure` with `confirmation_phrase: "apply_change"`
+- **Progressive MCP tool calling** — `island_actions` catalog/describe; invoke tools take `params` instead of every action field
 
 ### Changed
+- **Breaking MCP:** `island_query` / `island_configure` no longer accept per-action top-level fields (`mac`, `command`, …). Pass them in `params`. Call `island_actions` (optional `query` / `kind`) for the compact catalog, or `action=<name>` for the full schema and example. Validation errors return JSON (`error`, `required`, `optional`, `example`, `help`) instead of throwing.
 - **Agent orientation**: added `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`; rewrote `REPOMAP.md`; expanded `CODING-STANDARDS.md` with dual-surface (MCP + AXI) extension playbooks and doc hygiene rules
 - **Skill discovery**: `.agent/skills/README.md` catalog; `.agents/skills` symlink for Codex/OpenCode-compatible skill roots
 - **Allowlist single source of truth**: `src/allowedCommands.ts` shared by MCP and `island-axi` (removes duplicated lists)

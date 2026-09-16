@@ -27,7 +27,7 @@ island-axi (primary for agents)     MCP (optional adapter)
         └─────────────┬─────────────┘
                       ▼
                  src/core/          ← add router actions HERE
-         (query.ts, configure.ts, session, validate)
+         (query.ts, configure.ts, actionCatalog.ts, session, validate)
                       │
         devices · islandSsh · parsers · allowedCommands
 ```
@@ -40,10 +40,11 @@ island-axi (primary for agents)     MCP (optional adapter)
 Shared core (`src/core/`):
 
 - `query.ts` / `configure.ts` — all router actions (`dispatchQuery`, `dispatchConfigure`)
+- `actionCatalog.ts` — MCP discovery (list/describe/param pick + error schemas)
 - `session.ts` / `validate.ts` / `syslog.ts`
 - Plus `src/devices.ts`, `islandSsh.ts`, `parsers/*`, `allowedCommands.ts`
 
-When you add a capability: implement once in `src/core/`, then wire MCP enums + AXI command presentation.
+When you add a capability: implement once in `src/core/`, add an `ActionSpec` in `actionCatalog.ts`, then wire MCP enums + AXI command presentation.
 
 ## Critical Island CLI rules (do not violate)
 
@@ -60,13 +61,15 @@ New router capability?
 ├─ Read-only?
 │  ├─ Parser in src/parsers/ (if structured)
 │  ├─ Handler + dispatchQuery case in src/core/query.ts
-│  ├─ MCP: add to QUERY_ACTIONS (server imports from core)
+│  ├─ ActionSpec in src/core/actionCatalog.ts (name, summary, params, example)
+│  ├─ MCP: QUERY_ACTIONS enum (server imports from core); do not add invoke fields
 │  ├─ AXI: present in src/cli/commands/ + island-axi.ts + help.ts
 │  └─ Allowlist: src/allowedCommands.ts if raw show
 └─ Write?
    ├─ Handler + dispatchConfigure in src/core/configure.ts
    ├─ Validate in core/validate (before SSH)
-   ├─ MCP: CONFIGURE_ACTIONS + confirmation_phrase
+   ├─ ActionSpec in src/core/actionCatalog.ts
+   ├─ MCP: CONFIGURE_ACTIONS + confirmation_phrase; params via catalog
    ├─ AXI: configure <kebab> + --confirm presentation
    └─ Global prompt → write memory → verify
 ```
@@ -88,6 +91,7 @@ Secrets: `devices.json` (gitignored) or `ROUTER_IP` + `ROUTER_PASS` / `ROUTER_KE
 
 - [ ] `npm run build` and `npm test` pass
 - [ ] Action implemented in `src/core/` (not duplicated in MCP/CLI)
+- [ ] `ActionSpec` added in `src/core/actionCatalog.ts` (MCP discovery)
 - [ ] MCP + AXI surfaces wired to the new core action
 - [ ] Allowlist only in `src/allowedCommands.ts`
 - [ ] No `configure terminal` in new config paths
