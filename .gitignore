@@ -44,3 +44,6 @@ venv/
 
 # Observability (local data & debug)
 observability/
+
+# Backups & archives
+*.zip

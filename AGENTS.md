@@ -16,7 +16,6 @@ Deep references (load on demand via skills):
 | Agent shell CLI (`island-axi`) | `.agent/skills/island-axi/SKILL.md` or `skills/island-axi/SKILL.md` |
 | AXI design principles | `.agent/skills/axi/SKILL.md` · [axi.md](https://axi.md/) |
 | Full Island Router CLI (fw 2.3.2) | `.agent/skills/island-router-cli/SKILL.md` |
-| MCP meta-tool patterns | `.agent/skills/skill-mcp-builder/SKILL.md` |
 
 Skill roots: `.agent/skills/` (primary) and `.agents/skills/` (symlink — Codex/OpenCode compatible).
 

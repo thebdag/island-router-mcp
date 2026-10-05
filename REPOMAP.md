@@ -108,15 +108,10 @@ Full action tables: `CODING-STANDARDS.md`.
 | `island-axi` | Using/extending the AXI CLI |
 | `axi` | Designing agent-ergonomic CLI output |
 | `island-router-cli` | Exact Island CLI syntax (fw 2.3.2) |
-| `skill-mcp-builder` | MCP schema / meta-tool patterns |
-| `skill-network-fleet` | Multi-device drift / backups |
-| `skill-firmware-differ` | Firmware upgrade runbooks |
-| `skill-network-traffic-etl` | Traffic ETL pipelines |
-| `skill-observability-pipeline` | Syslog → Grafana |
-| `skill-homelab-pi` | Pi / Docker host ops |
-| `skill-finops-gcp` | GCP cost |
-| `skill-mcp-orchestrator` | Cross-MCP workflows |
-| `skill-meta-pipeline` / `skill-knowledge-harvester` | Skill lifecycle / KI extraction |
+| `skill-network-fleet` | Multi-device Island Router drift / backups |
+| `skill-firmware-differ` | Island Router firmware upgrade runbooks |
+| `skill-network-traffic-etl` | Island Router traffic ETL pipelines |
+| `skill-observability-pipeline` | Island Router syslog → Grafana |
 
 Index: `.agent/skills/README.md`.
 
