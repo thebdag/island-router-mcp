@@ -4,12 +4,12 @@ description: |
   Extract, transform, and load per-device network traffic data from Island Routers
   into analytics platforms. Covers bandwidth consumption, site visit history,
   content categorization, and device activity tracking. Supports export to
-  Grafana/Loki, InfluxDB, BigQuery, CSV/Parquet files, and custom pipelines.
+  Grafana/Loki, InfluxDB, DuckDB, CSV/Parquet files, and custom pipelines.
   Use when building traffic dashboards, usage reports, or billing/compliance systems.
 category: networking
 risk: safe
 source: community
-tags: [etl, analytics, traffic, bandwidth, history, grafana, influxdb, bigquery, reporting]
+tags: [etl, analytics, traffic, bandwidth, history, grafana, influxdb, duckdb, reporting, island-router]
 date_added: "2026-04-03"
 ---
 
@@ -22,7 +22,7 @@ Extract per-device network activity from Island Routers and load it into analyti
 - Building per-device bandwidth consumption dashboards
 - Tracking site visit history and content categories per client
 - Creating usage reports (daily/weekly/monthly) for billing or compliance
-- Loading network activity into a data warehouse (BigQuery, Snowflake, etc.)
+- Loading network activity into an analytical store (DuckDB, SQLite, etc.)
 - Feeding traffic data to InfluxDB/Prometheus for time-series analysis
 - Exporting event logs to SIEM platforms (Splunk, Elastic, etc.)
 
@@ -156,7 +156,7 @@ Used to **enrich** Tier 1 and Tier 2 data with human-readable device names.
 │                    LOAD Targets                             │
 │                                                             │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐  │
-│  │ Grafana  │ │ InfluxDB │ │ BigQuery │ │ CSV/Parquet  │  │
+│  │ Grafana  │ │ InfluxDB │ │  DuckDB   │ │ CSV/Parquet  │  │
 │  │ + Loki   │ │          │ │          │ │ (files)      │  │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────────┘  │
 │                                                             │
@@ -658,43 +658,43 @@ def load_influxdb(records, url="http://localhost:8086",
 | Top devices (1h) | `from(bucket:"traffic") \|> range(start: -1h) \|> filter(fn: (r) => r._measurement == "device_traffic") \|> sum() \|> group(columns: ["device_name"]) \|> sort(columns: ["_value"], desc: true)` |
 | Bandwidth over time | `from(bucket:"traffic") \|> range(start: -24h) \|> filter(fn: (r) => r._field == "bytes_total") \|> aggregateWindow(every: 5m, fn: sum)` |
 
-### Target 3: BigQuery (Data Warehouse)
+### Target 3: DuckDB / SQLite (Analytical Database)
 
-For long-term retention and SQL analytics across large date ranges.
+For local retention and fast SQL analytics across date ranges without cloud dependencies.
 
-**Schema:**
+**Schema (DuckDB / SQLite):**
 
 ```sql
-CREATE TABLE IF NOT EXISTS `project.network.traffic_events` (
+CREATE TABLE IF NOT EXISTS traffic_events (
   timestamp TIMESTAMP,
-  device_mac STRING,
-  device_ip STRING,
-  device_name STRING,
-  event_type STRING,
-  category STRING,
-  destination STRING,
-  destination_ip STRING,
-  bytes_rx INT64,
-  bytes_tx INT64,
-  bytes_total INT64
-)
-PARTITION BY DATE(timestamp)
-CLUSTER BY device_name, category;
+  device_mac VARCHAR,
+  device_ip VARCHAR,
+  device_name VARCHAR,
+  event_type VARCHAR,
+  category VARCHAR,
+  destination VARCHAR,
+  destination_ip VARCHAR,
+  bytes_rx BIGINT,
+  bytes_tx BIGINT,
+  bytes_total BIGINT
+);
 ```
 
-**Python loader (uses google-cloud-bigquery):**
+**Python loader (DuckDB):**
 
 ```python
-from google.cloud import bigquery
+import duckdb
+import pandas as pd
 
-def load_bigquery(records, table_id="project.network.traffic_events"):
-    """Insert traffic records into BigQuery."""
-    client = bigquery.Client()
-    errors = client.insert_rows_json(table_id, records)
-    if errors:
-        print(f"BigQuery errors: {errors}")
-    else:
-        print(f"Loaded {len(records)} rows to {table_id}")
+def load_duckdb(records, db_path="traffic.duckdb"):
+    """Insert traffic records into local DuckDB database."""
+    df = pd.DataFrame(records)
+    con = duckdb.connect(db_path)
+    con.execute("CREATE TABLE IF NOT EXISTS traffic_events AS SELECT * FROM df WHERE 1=0")
+    con.register("df_view", df)
+    con.execute("INSERT INTO traffic_events SELECT * FROM df_view")
+    print(f"Loaded {len(records)} rows to {db_path}")
+    con.close()
 ```
 
 **Example analytics queries:**
@@ -702,26 +702,26 @@ def load_bigquery(records, table_id="project.network.traffic_events"):
 ```sql
 -- Top 10 devices by total bandwidth (last 7 days)
 SELECT device_name, SUM(bytes_total) AS total_bytes,
-       ROUND(SUM(bytes_total) / 1073741824, 2) AS total_gb
-FROM `project.network.traffic_events`
-WHERE timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
+       ROUND(SUM(bytes_total) / 1073741824.0, 2) AS total_gb
+FROM traffic_events
+WHERE timestamp > CURRENT_TIMESTAMP - INTERVAL '7 days'
 GROUP BY device_name
 ORDER BY total_bytes DESC
 LIMIT 10;
 
 -- Daily bandwidth breakdown by category
-SELECT DATE(timestamp) AS day, category,
-       ROUND(SUM(bytes_total) / 1073741824, 2) AS gb
-FROM `project.network.traffic_events`
-WHERE timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+SELECT CAST(timestamp AS DATE) AS day, category,
+       ROUND(SUM(bytes_total) / 1073741824.0, 2) AS gb
+FROM traffic_events
+WHERE timestamp > CURRENT_TIMESTAMP - INTERVAL '30 days'
 GROUP BY day, category
 ORDER BY day DESC, gb DESC;
 
 -- Top 25 destinations by traffic volume this week
 SELECT destination, COUNT(*) AS hit_count,
-       ROUND(SUM(bytes_total) / 1048576, 1) AS total_mb
-FROM `project.network.traffic_events`
-WHERE timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
+       ROUND(SUM(bytes_total) / 1048576.0, 1) AS total_mb
+FROM traffic_events
+WHERE timestamp > CURRENT_TIMESTAMP - INTERVAL '7 days'
   AND destination IS NOT NULL AND destination != ''
 GROUP BY destination
 ORDER BY total_mb DESC
@@ -859,7 +859,7 @@ The Island Router does **not** maintain cumulative per-device byte counters like
 - [ ] **Device map:** Run `show ip dhcp-reservations csv` to build MAC → hostname lookup
 - [ ] **First pull:** Extract 1 hour of history: `show history begin 1h first json:`
 - [ ] **Transform:** Enrich events with device names, aggregate by device
-- [ ] **Load:** Write to your target (start with JSON files, graduate to InfluxDB/BigQuery)
+- [ ] **Load:** Write to your target (start with JSON files, graduate to InfluxDB/DuckDB)
 - [ ] **Automate:** Set up cron job or history instance for continuous extraction
 - [ ] **Dashboard:** Build your first Grafana panel (bandwidth by device, last 24h)
 - [ ] **Validate:** Confirm no event gaps by checking record counts across intervals
@@ -872,6 +872,4 @@ The Island Router does **not** maintain cumulative per-device byte counters like
 | --- | --- |
 | `island-router-cli` | Source reference for all CLI commands and output formats |
 | `skill-observability-pipeline` | Covers **syslog** forwarding (system logs, not traffic data). Complementary — use both for full observability |
-| `skill-homelab-pi` | Target deployment platform for the ETL receiver and analytics stack |
-| `skill-finops-gcp` | BigQuery loading patterns for long-term traffic analytics |
 | `skill-network-fleet` | Multi-device ETL across a fleet of Island Routers |

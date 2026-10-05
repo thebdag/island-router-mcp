@@ -27,7 +27,7 @@ export async function configAddDhcp(
   validateIp(ip);
 
   const result = await withSession(dev, async (s) => {
-    let cmd = `ip dhcp-reserve ${mac} ${ip}`;
+    let cmd = `ip dhcp-reserve ${ip} ${mac}`;
     if (hostname) cmd += ` ${hostname}`;
     const configOut = await runCommand(s, cmd, 2000);
     const writeOut = await runCommand(s, "write memory", 3000);

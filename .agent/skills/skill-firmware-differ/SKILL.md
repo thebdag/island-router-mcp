@@ -1,30 +1,28 @@
 ---
 name: skill-firmware-differ
-description: "Plan and assess safe firmware upgrades for network devices. Compare running configs against release notes, identify deprecated CLI commands, generate upgrade runbooks with rollback plans, and create pre/post upgrade snapshots. Use when a firmware update is available, planning a router upgrade, or diffing configs between firmware versions."
+description: "Plan and assess safe firmware upgrades for Island Routers (fw 2.3.2+). Compare running configs against release notes, identify deprecated CLI commands, generate upgrade runbooks with rollback plans, and handle update / clear-update actions."
 category: networking
 risk: moderate
 source: community
-tags: [firmware, upgrade, network, router, diff, config-management, rollback]
+tags: [firmware, upgrade, network, router, diff, config-management, rollback, island-router]
 date_added: "2026-04-01"
 ---
 
-# Firmware Upgrade Planner
+# Island Router Firmware Upgrade Planner
 
-Plan safe firmware upgrades for network devices by analyzing config compatibility, generating runbooks, and creating rollback plans.
+Plan safe firmware upgrades for Island Routers by analyzing config compatibility, generating runbooks, and creating rollback plans.
 
 ## When to Use
 
-- A new firmware version is available for a network device
-- Planning an upgrade from one firmware version to another
+- A new firmware version is available for an Island Router
+- Planning an upgrade from one firmware version to another (e.g., fw 2.3.2 → target)
 - Checking if current configuration is compatible with a new firmware
 - Creating a step-by-step upgrade runbook with rollback
 - Diffing config behavior between firmware versions
 
 ## When NOT to Use
 
-- Software application upgrades (use `skill-rails-upgrade` or similar)
-- Cloud infrastructure updates (use Terraform/Pulumi skills)
-- Routine config changes without firmware change (use `island-router-cli`)
+- Routine config changes without firmware change (use `island-router-cli` or `island-axi`)
 
 ---
 
@@ -156,20 +154,21 @@ write memory              # Ensure startup-config is current
 write network scp://backup@server/upgrades/<device-id>/pre-upgrade.cfg
 ```
 
-### 3. Download Firmware
+### 3. Check and Install Firmware
 ```
-auto-update               # Or manual firmware download
+update [<url>]            # Checks for newer firmware and installs (or specifies URL)
 ```
-
-### 4. Apply Firmware
-Follow device-specific upgrade procedure.
-
-### 5. Reboot
+If an update gets stuck or needs cancellation:
 ```
-reload                    # REQUIRES USER CONFIRMATION
+clear update              # Stops in-progress update
 ```
 
-### 6. Post-Upgrade Verification
+### 4. Reboot
+```
+reload                    # Reboots the router (REQUIRES USER CONFIRMATION)
+```
+
+### 5. Post-Upgrade Verification
 ```
 show version              # Confirm new firmware version
 show running-config       # Verify config survived upgrade
@@ -179,12 +178,10 @@ show vpns                 # Check VPN peers reconnected
 show ip neighbors         # Verify ARP table populated
 ```
 
-### 7. Config Migration (if needed)
-Apply any command changes identified in compatibility analysis:
+### 6. Config Migration (if needed)
+Apply any command changes from the global prompt (do NOT wrap with `configure terminal` / `end`):
 ```
-configure terminal
 <new-command replacing deprecated one>
-end
 write memory
 ```
 

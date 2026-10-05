@@ -1,31 +1,29 @@
 ---
 name: skill-network-fleet
-description: "Manage multiple network devices as a fleet. Pull configs, detect drift against golden baselines, run compliance checks, schedule automated backups, and generate reports. Use when managing multiple routers or switches, detecting config drift, running compliance audits, or automating config backups across devices."
+description: "Manage multiple Island Routers as a fleet. Pull configs, detect drift against golden baselines, run compliance checks, schedule automated backups, and generate reports across devices.json inventory."
 category: networking
 risk: moderate
 source: community
-tags: [networking, fleet-management, config-drift, compliance, automation, router, backup]
+tags: [networking, fleet-management, config-drift, compliance, automation, island-router, backup]
 date_added: "2026-04-01"
 ---
 
-# Network Fleet Management
+# Island Router Fleet Management
 
-Manage multiple network devices as a coordinated fleet — config backups, drift detection, compliance audits, and bulk operations.
+Manage multiple Island Routers as a coordinated fleet — config backups, drift detection, compliance audits, and bulk operations.
 
 ## When to Use
 
-- Managing more than one network device (routers, switches, APs)
+- Managing multiple Island Routers across sites
 - Detecting configuration drift from approved baselines
-- Running compliance checks (NTP servers, DNS settings, syslog config, etc.)
-- Automating scheduled config backups across all devices
+- Running compliance checks (NTP servers, DNS settings, syslog config, firewall state)
+- Automating scheduled config backups across all Island Routers
 - Generating fleet-wide status reports
-- Comparing configurations between devices
+- Comparing configurations between Island Routers
 
 ## When NOT to Use
 
-- Single-device management (use `island-router-cli` directly)
-- Non-network infrastructure (use cloud-specific skills)
-- Deep packet inspection or traffic analysis (use Wireshark skills)
+- Single-router management (use `island-router-cli` or `island-axi` directly)
 
 ---
 
@@ -141,7 +139,7 @@ Compare running configs against approved golden baselines.
 
 ### Removals (in baseline, not in running)
 ```diff
-- ntp time.google.com
+- ntp pool.ntp.org
 ```
 
 ### Recommended Actions
@@ -244,9 +242,10 @@ Apply the same configuration change across multiple devices.
 
 ```
 For each device in fleet:
-  1. island_configure → action: (custom) → configure terminal → ntp time.cloudflare.com → end
-  2. Verify: island_query → action: command → show ntp
-  3. Persist: write memory (with user confirmation)
+  1. island-axi configure ntp time.cloudflare.com --confirm --device <id>
+     (or MCP island_configure action: ntp, server: "time.cloudflare.com", confirmation_phrase: "apply_change")
+  2. Verify: island_query → action: ntp (or `show ntp`)
+  3. Automatically persisted via `write memory` by the configure action
 ```
 
 > **CAUTION:** Never bulk-persist without individual verification. A misconfiguration applied to all devices simultaneously can cause a network-wide outage.

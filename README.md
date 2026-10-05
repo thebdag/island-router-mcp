@@ -99,17 +99,10 @@ Located in `.agent/skills/` (and installable `skills/island-axi/`), these are AI
 | `island-axi` | Networking / AXI | Agent-first CLI usage — TOON output, commands, hooks, configure safety |
 | `axi` | Standards | AXI design principles (from [axi.md](https://axi.md/)) for reviewing agent CLIs |
 | `island-router-cli` | Networking | CLI reference for Island Router fw 2.3.2 — aligned with official 260-page guide. 2-context model (Global + Interface), history ETL, syslog (numeric 0-7), VPN, SNMP, DNS-over-HTTPS |
-| `skill-mcp-builder` | Development | Guide for building MCP servers — project scaffolding, tool registration (v1 + v2), Zod schemas, meta-tool patterns |
-| `skill-observability-pipeline` | DevOps | Syslog → Promtail → Loki → Grafana pipeline setup with Docker Compose configs and Raspberry Pi considerations |
-| `skill-finops-gcp` | Cloud | GCP cost analysis via BigQuery billing exports, anomaly detection, budget alerts, Cloud Run rightsizing |
-| `skill-meta-pipeline` | Meta | Orchestrates skill lifecycle: create → scan → check → install → audit → improve |
-| `skill-network-fleet` | Networking | Multi-device config drift detection, compliance audits, automated backups |
-| `skill-mcp-orchestrator` | Automation | Cross-MCP workflow recipes — Jira + Cloud Run + Confluence, incident triage, sprint planning |
-| `skill-homelab-pi` | DevOps | Raspberry Pi service management — Docker Compose, systemd hardening, SD card longevity, backups |
-| `skill-publisher` | Meta | Skill publishing pipeline — validation gates, README generation, GitHub releases, catalog updates |
-| `skill-firmware-differ` | Networking | Firmware upgrade runbooks with pre/post snapshots, compatibility analysis, rollback plans |
-| `skill-network-traffic-etl` | Analytics | Per-device traffic ETL — bandwidth consumption, sites visited, content categories → Grafana, InfluxDB, BigQuery, CSV |
-| `skill-knowledge-harvester` | Meta | Extracts reusable knowledge from conversation logs into structured Knowledge Items |
+| `skill-observability-pipeline` | DevOps | Island Router syslog → Promtail → Loki → Grafana pipeline setup |
+| `skill-network-fleet` | Networking | Multi-device Island Router config drift detection, compliance audits, automated backups |
+| `skill-firmware-differ` | Networking | Island Router firmware upgrade runbooks with pre/post snapshots, compatibility analysis, rollback plans |
+| `skill-network-traffic-etl` | Analytics | Per-device traffic ETL from Island Router `show history` — bandwidth, sites visited, categories → Grafana, InfluxDB, DuckDB, CSV |
 
 ---
 

@@ -1,31 +1,29 @@
 ---
 name: skill-observability-pipeline
-description: "Build log ingestion and monitoring pipelines from network devices to Grafana. Covers syslog forwarding, rsyslog/Promtail receivers, Loki log storage, Grafana dashboards, and alerting. Use when setting up logging, forwarding syslog, configuring Loki, or building Grafana dashboards for infrastructure monitoring."
+description: "Build log ingestion and monitoring pipelines from Island Routers to Grafana. Covers Island Router syslog configuration (numeric levels 0-7, UDP/TCP), Promtail/rsyslog receivers, Loki log storage, Grafana dashboards, and alerting for router events."
 category: devops
 risk: safe
 source: community
-tags: [observability, grafana, loki, promtail, syslog, monitoring, logging, raspberry-pi]
+tags: [observability, grafana, loki, promtail, syslog, monitoring, logging, island-router]
 date_added: "2026-04-01"
 ---
 
-# Observability Pipeline Builder
+# Island Router Observability Pipeline
 
-Build end-to-end log ingestion pipelines from network devices and servers to Grafana for visualization and alerting.
+Build an end-to-end log ingestion pipeline from Island Routers to Grafana for visualization and alerting.
 
 ## When to Use
 
-- Setting up syslog forwarding from routers, switches, or servers
-- Configuring Promtail or rsyslog as log receivers
+- Setting up syslog forwarding from Island Routers
+- Configuring Promtail or rsyslog as syslog receivers for router logs
 - Deploying Loki for log aggregation and querying
-- Building Grafana dashboards for infrastructure monitoring
-- Creating alert rules for network events (interface flaps, VPN disconnects, etc.)
-- Standing up a monitoring stack on a Raspberry Pi or homelab server
+- Building Grafana dashboards for Island Router monitoring (link status, VPNs, DHCP, errors)
+- Creating alert rules for router events (interface flaps, VPN disconnects, error bursts)
 
 ## When NOT to Use
 
-- Application-level logging (use language-specific logging frameworks)
-- Metrics-only monitoring without logs (use Prometheus + Grafana instead)
-- Cloud-native logging (CloudWatch, Cloud Logging) — use cloud-specific skills
+- Router traffic history ETL (use `skill-network-traffic-etl` for subscriber bandwidth / sites visited)
+- Real-time packet capture on the router (use `tcpdump` via router CLI)
 
 ---
 
@@ -33,14 +31,14 @@ Build end-to-end log ingestion pipelines from network devices and servers to Gra
 
 ```
 ┌─────────────────────┐
-│ Network Devices     │   syslog (UDP/TCP:514)
-│ (routers, switches) ├──────────────────────────┐
+│ Island Router       │   syslog (UDP/TCP:514 or :1514)
+│ (system events)     ├──────────────────────────┐
 └─────────────────────┘                          │
                                                  ▼
-┌─────────────────────┐    ┌──────────────────────────┐
-│ Linux Servers       │    │ Log Receiver              │
-│ (app logs, journal) ├───▶│ rsyslog or Promtail       │
-└─────────────────────┘    └────────────┬─────────────┘
+                               ┌──────────────────────────┐
+                               │ Log Receiver             │
+                               │ Promtail or rsyslog      │
+                               └────────────┬─────────────┘
                                         │ push
                                         ▼
                            ┌──────────────────────────┐
@@ -57,30 +55,40 @@ Build end-to-end log ingestion pipelines from network devices and servers to Gra
 
 ---
 
-## Step 1: Configure Syslog Source
+## Step 1: Configure Syslog Source on Island Router
 
-### Network Devices (General)
+Island Router config commands run from the **global prompt** (never wrap with `configure terminal` or `end`). Syslog severity levels are **numeric 0–7** (0=emerg, 1=alert, 2=crit, 3=err, 4=warning, 5=notice, 6=info, 7=debug).
 
-Most network devices can send standard syslog messages. Configure the remote source on the device CLI:
+### Method A: Island Router SSH CLI
 
 ```
-configure terminal
-syslog server <receiver-ip> 514
-syslog level info
+syslog server <receiver-ip>
+syslog level 6
 syslog protocol udp
-end
 write memory
 ```
 
-Or via the `island-router-mcp` server:
+### Method B: Via `island-axi` CLI
 
+```bash
+island-axi configure syslog <receiver-ip> --level 6 --protocol udp --confirm --device <device-id>
 ```
-island_configure → action: set_syslog, server_ip: <receiver-ip>, port: 514, level: info, protocol: udp
+
+### Method C: Via MCP `island_configure`
+
+```json
+{
+  "device_id": "island-edge-1",
+  "action": "syslog",
+  "params": {
+    "server": "<receiver-ip>",
+    "port": 514,
+    "level": 6,
+    "protocol": "udp"
+  },
+  "confirmation_phrase": "apply_change"
+}
 ```
-
-### Linux Servers (systemd journal)
-
-For forwarding journald logs, configure rsyslog or use Promtail to tail the journal directly.
 
 ---
 
@@ -121,13 +129,6 @@ scrape_configs:
       - source_labels: [__syslog_message_app_name]
         target_label: app
 
-  # Tail local log files
-  - job_name: system
-    static_configs:
-      - targets: [localhost]
-        labels:
-          job: system
-          __path__: /var/log/*.log
 ```
 
 > **Note:** Promtail listens on port 1514 (not 514) to avoid needing root. Either configure the device to send to 1514, or use iptables to redirect 514 → 1514.
