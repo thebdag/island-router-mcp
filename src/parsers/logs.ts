@@ -18,12 +18,34 @@ export interface SyslogConfig {
 }
 
 // Pre-compiled regexes for log parsing
-const SYSLOG_RE = /^(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+\S+\s+(\w+)\s+([^:\s]+):\s*(.*)$/;
-const BRACKET_RE = /^(?:([^[\]\s]+\s+[^[\]\s]+)\s+)?\[(\w+)]\s*(.*)$/;
+const SYSLOG_RE = /^(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+\S+\s+(\w+)\s+([^:\s]+):(.*)$/;
 const SERVER_RE = /(?:syslog\s+)?server[:\s]+(\S+)/;
 const PORT_RE = /port[:\s]+(\d+)/;
 const LEVEL_RE = /level[:\s]+(\w+)/;
 const PROTO_RE = /protocol[:\s]+(\w+)/;
+
+function parseBracketLogEntry(line: string): LogEntry | undefined {
+  const openBracket = line.indexOf("[");
+  const closeBracket = line.indexOf("]", openBracket + 1);
+  if (openBracket === -1 || closeBracket === -1) return undefined;
+
+  const timestamp = line.slice(0, openBracket).trim();
+  const severity = line.slice(openBracket + 1, closeBracket);
+  if (
+    !/^\w+$/.test(severity) ||
+    timestamp.includes("]") ||
+    (timestamp !== "" && timestamp.split(/\s+/).length !== 2)
+  ) {
+    return undefined;
+  }
+
+  return {
+    timestamp,
+    severity,
+    facility: "",
+    message: line.slice(closeBracket + 1).trimStart(),
+  };
+}
 
 /**
  * Parse `show log` output into structured log entries.
@@ -44,20 +66,15 @@ export function parseLogEntries(raw: string): LogEntry[] {
         timestamp: (syslogMatch[1] ?? "").trim(),
         severity: syslogMatch[2] ?? "",
         facility: syslogMatch[3] ?? "",
-        message: syslogMatch[4] ?? "",
+        message: (syslogMatch[4] ?? "").trimStart(),
       });
       continue;
     }
 
     // Fallback: try bracketed severity: [info] message
-    const bracketMatch = BRACKET_RE.exec(line);
-    if (bracketMatch) {
-      results.push({
-        timestamp: bracketMatch[1]?.trim() ?? "",
-        severity: bracketMatch[2] ?? "",
-        facility: "",
-        message: bracketMatch[3] ?? "",
-      });
+    const bracketEntry = parseBracketLogEntry(line);
+    if (bracketEntry) {
+      results.push(bracketEntry);
       continue;
     }
 

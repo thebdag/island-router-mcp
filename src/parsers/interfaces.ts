@@ -80,6 +80,33 @@ function extractStat(block: string, pattern: RegExp): number | null {
   return m ? Number.parseInt(m[1] ?? "0", 10) : null;
 }
 
+function normalizedWord(value: string): string {
+  return value.replace(/[^a-z]/g, "");
+}
+
+function extractCounter(
+  block: string,
+  optionalLabels: readonly string[],
+  targetLabels: readonly string[],
+): number | null {
+  for (const line of block.split("\n")) {
+    const tokens = line.split(/\s+/);
+    for (let index = 0; index < tokens.length; index++) {
+      const count = tokens[index];
+      if (!count || !/^\d+$/.test(count)) continue;
+
+      let labelIndex = index + 1;
+      if (optionalLabels.includes(normalizedWord(tokens[labelIndex] ?? ""))) {
+        labelIndex++;
+      }
+      if (targetLabels.includes(normalizedWord(tokens[labelIndex] ?? ""))) {
+        return Number.parseInt(count, 10);
+      }
+    }
+  }
+  return null;
+}
+
 /**
  * Parse `show interface` detailed output.
  *
@@ -124,12 +151,12 @@ export function parseInterfaceDetail(raw: string): InterfaceDetail[] {
     const macMatch = MAC_RE.exec(block);
     if (macMatch) detail.macAddress = macMatch[1] ?? null;
 
-    detail.txBytes   = extractStat(lower, /(\d+)\s+(?:(?:bytes|byte)\s+)?(?:output|tx|sent)/);
-    detail.rxBytes   = extractStat(lower, /(\d+)\s+(?:(?:bytes|byte)\s+)?(?:input|rx|received)/);
-    detail.txPackets = extractStat(lower, /(\d+)\s+(?:(?:packets|packet)\s+)?(?:output|tx|sent)/);
-    detail.rxPackets = extractStat(lower, /(\d+)\s+(?:(?:packets|packet)\s+)?(?:input|rx|received)/);
-    detail.txErrors  = extractStat(lower, /(\d+)\s+(?:(?:output|tx)\s+)?errors?/);
-    detail.rxErrors  = extractStat(lower, /(\d+)\s+(?:(?:input|rx)\s+)?errors?/);
+    detail.txBytes   = extractCounter(lower, ["bytes", "byte"], ["output", "tx", "sent"]);
+    detail.rxBytes   = extractCounter(lower, ["bytes", "byte"], ["input", "rx", "received"]);
+    detail.txPackets = extractCounter(lower, ["packets", "packet"], ["output", "tx", "sent"]);
+    detail.rxPackets = extractCounter(lower, ["packets", "packet"], ["input", "rx", "received"]);
+    detail.txErrors  = extractCounter(lower, ["output", "tx"], ["error", "errors"]);
+    detail.rxErrors  = extractCounter(lower, ["input", "rx"], ["error", "errors"]);
 
     const speedMatch = /(?:speed|bw)\s+(\S+)/.exec(lower);
     if (speedMatch) detail.speed = speedMatch[1] ?? null;

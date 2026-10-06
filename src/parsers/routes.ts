@@ -19,7 +19,6 @@ export interface Neighbor {
 }
 
 // Pre-compiled regexes
-const VIA_RE = /^([A-Z*]+)\s+(\S+)\s+(?:\[(\d+)\/\d+]\s+)?via\s+([^,\s]+),?\s*(\S*)$/i;
 const DIRECT_RE = /^([A-Z*]+)\s+(\S+)\s+is\s+directly\s+connected,?\s*(\S*)$/i;
 const IP_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
 
@@ -27,6 +26,43 @@ const IP_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
 function splitCidr(dest: string): { destination: string; mask: string } {
   const [destination, mask] = dest.split("/");
   return { destination: destination ?? "", mask: mask ? `/${mask}` : "" };
+}
+
+function parseMetric(token: string | undefined): number | null {
+  if (!token?.startsWith("[") || !token.endsWith("]")) return null;
+  const metric = token.slice(1, -1).split("/")[0];
+  if (!metric || !/^\d+$/.test(metric)) return null;
+  return Number.parseInt(metric, 10);
+}
+
+function parseViaRoute(line: string): Route | undefined {
+  const [prefix, suffix, extra] = line.split(/\s+via\s+/i);
+  if (!prefix || !suffix || extra !== undefined) return undefined;
+
+  const prefixParts = prefix.trim().split(/\s+/);
+  const type = prefixParts[0];
+  const dest = prefixParts[1];
+  if (!type || !dest) return undefined;
+
+  const commaIndex = suffix.indexOf(",");
+  const gatewayAndInterface = suffix.trim().split(/\s+/);
+  const gateway = commaIndex === -1
+    ? gatewayAndInterface[0]
+    : suffix.slice(0, commaIndex).trim();
+  const iface = commaIndex === -1
+    ? gatewayAndInterface.slice(1).join(" ")
+    : suffix.slice(commaIndex + 1).trim();
+  if (!gateway) return undefined;
+
+  const { destination, mask } = splitCidr(dest);
+  return {
+    destination,
+    mask,
+    gateway,
+    interface: iface,
+    metric: parseMetric(prefixParts[2]),
+    type,
+  };
 }
 
 /**
@@ -45,18 +81,9 @@ export function parseRoutes(raw: string): Route[] {
     if (/^codes/i.test(line) || /^gateway/i.test(line) || line.startsWith("---")) continue;
 
     // Pattern: TYPE  dest/mask  [metric] via gateway, interface
-    const viaMatch = VIA_RE.exec(line);
-    if (viaMatch) {
-      const [, type, dest, metric, gw, iface] = viaMatch;
-      const { destination, mask } = splitCidr(dest ?? "");
-      results.push({
-        destination,
-        mask,
-        gateway: gw ?? "",
-        interface: iface ?? "",
-        metric: metric ? Number.parseInt(metric, 10) : null,
-        type: type ?? "",
-      });
+    const viaRoute = parseViaRoute(line);
+    if (viaRoute) {
+      results.push(viaRoute);
       continue;
     }
 

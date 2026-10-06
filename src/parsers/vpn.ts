@@ -67,8 +67,8 @@ function applyPeerField(peer: Partial<VpnPeer>, trimmed: string): boolean {
   const transferMatch = /^transfer:\s*(.+)/i.exec(trimmed);
   if (transferMatch) {
     const transferStr = transferMatch[1] ?? "";
-    peer.rxBytes = parseTransferValue(transferStr, /(\d+(?:\.\d+)?)\s+([KMGT]i?B)\s+received/i);
-    peer.txBytes = parseTransferValue(transferStr, /(\d+(?:\.\d+)?)\s+([KMGT]i?B)\s+sent/i);
+    peer.rxBytes = parseTransferValue(transferStr, "received");
+    peer.txBytes = parseTransferValue(transferStr, "sent");
     return true;
   }
 
@@ -143,13 +143,17 @@ export function parseVpnPeers(raw: string): VpnSummary {
   return summary;
 }
 
-/** Parse transfer value strings like "1.23 MiB" into bytes. */
-function parseTransferValue(str: string, re: RegExp): number | null {
-  const match = re.exec(str);
-  if (!match) return null;
+/** Parse transfer values such as "1.23 MiB received" into bytes. */
+function parseTransferValue(str: string, direction: "received" | "sent"): number | null {
+  const tokens = str.split(/\s+/);
+  const directionIndex = tokens.findIndex(
+    (token) => token.replace(/[,:]$/, "").toLowerCase() === direction,
+  );
+  if (directionIndex < 2) return null;
 
-  const value = Number.parseFloat(match[1] ?? "0");
-  const unit = (match[2] ?? "").toLowerCase();
+  const value = Number.parseFloat(tokens[directionIndex - 2] ?? "");
+  if (!Number.isFinite(value)) return null;
+  const unit = (tokens[directionIndex - 1] ?? "").toLowerCase();
 
   const multipliers: Record<string, number> = {
     "b": 1,

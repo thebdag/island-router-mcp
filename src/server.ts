@@ -71,7 +71,7 @@ server.tool(
   "island_list_devices",
   "List all configured Island Router devices. No SSH needed.",
   {},
-  async () =>
+  () =>
     text(
       devices.map(({ id, host, port, description }) => ({
         id,
@@ -100,7 +100,7 @@ server.tool(
       .optional()
       .describe("If set, return the full schema and example for this action"),
   },
-  async ({ query, kind, action }) => {
+  ({ query, kind, action }) => {
     try {
       if (action) {
         return text(formatDescribe(describeAction(action)));

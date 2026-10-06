@@ -57,6 +57,19 @@ const ACTION_FLAGS: Record<Action, string[]> = {
   "remove-dns-redirect": ["device", "domain", "confirm"],
 };
 
+const REQUIRED_FLAGS: Partial<Record<Action, readonly string[]>> = {
+  "add-dhcp": ["mac", "ip"],
+  "remove-dhcp": ["mac"],
+  "set-syslog": ["server-ip"],
+  "set-hostname": ["hostname"],
+  "set-auto-update": ["days"],
+  "set-led": ["level"],
+  "set-timezone": ["timezone"],
+  "set-ntp": ["server"],
+  "add-dns-redirect": ["domain", "redirect-server"],
+  "remove-dns-redirect": ["domain"],
+};
+
 function requireFlag(
   flags: Record<string, string | boolean>,
   name: string,
@@ -71,11 +84,7 @@ function requireFlag(
   return value;
 }
 
-export async function configureCommand(
-  args: string[],
-  context?: CliContext,
-): Promise<Record<string, unknown>> {
-  const actionRaw = args[0];
+function resolveAction(actionRaw: string | undefined): Action {
   if (!actionRaw || actionRaw === "--help") {
     throw new AxiError("configure action is required", "VALIDATION_ERROR", [
       `actions: ${ACTIONS.join(", ")}`,
@@ -87,9 +96,14 @@ export async function configureCommand(
       `valid actions: ${ACTIONS.join(", ")}`,
     ]);
   }
-  const action = actionRaw as Action;
+  return actionRaw as Action;
+}
 
-  const { positionals, flags } = parseFlags(args.slice(1));
+function parseConfigureFlags(
+  args: string[],
+  action: Action,
+): Record<string, string | boolean> {
+  const { positionals, flags } = parseFlags(args);
   if (positionals.length > 0) {
     throw new AxiError(
       `unexpected argument '${positionals[0]}'`,
@@ -99,12 +113,13 @@ export async function configureCommand(
   }
 
   const known = ACTION_FLAGS[action];
-  const unknown = Object.keys(flags).filter((k) => !known.includes(k));
+  const unknown = Object.keys(flags).filter((key) => !known.includes(key));
   if (unknown.length > 0) {
+    const validFlags = known.map((flag) => `--${flag}`).join(", ");
     throw new AxiError(
       `unknown flag --${unknown[0]} for \`configure ${action}\``,
       "VALIDATION_ERROR",
-      [`valid flags: ${known.map((k) => `--${k}`).join(", ")}`],
+      [`valid flags: ${validFlags}`],
     );
   }
 
@@ -115,31 +130,22 @@ export async function configureCommand(
       ["Re-run with --confirm after reviewing the change"],
     );
   }
+  return flags;
+}
 
-  // Validate required flags before SSH
-  if (action === "add-dhcp") {
-    requireFlag(flags, "mac", action);
-    requireFlag(flags, "ip", action);
-  } else if (action === "remove-dhcp") {
-    requireFlag(flags, "mac", action);
-  } else if (action === "set-syslog") {
-    requireFlag(flags, "server-ip", action);
-  } else if (action === "set-hostname") {
-    requireFlag(flags, "hostname", action);
-  } else if (action === "set-auto-update") {
-    requireFlag(flags, "days", action);
-  } else if (action === "set-led") {
-    requireFlag(flags, "level", action);
-  } else if (action === "set-timezone") {
-    requireFlag(flags, "timezone", action);
-  } else if (action === "set-ntp") {
-    requireFlag(flags, "server", action);
-  } else if (action === "add-dns-redirect") {
-    requireFlag(flags, "domain", action);
-    requireFlag(flags, "redirect-server", action);
-  } else if (action === "remove-dns-redirect") {
-    requireFlag(flags, "domain", action);
+function validateRequiredFlags(flags: Record<string, string | boolean>, action: Action): void {
+  for (const name of REQUIRED_FLAGS[action] ?? []) {
+    requireFlag(flags, name, action);
   }
+}
+
+export async function configureCommand(
+  args: string[],
+  context?: CliContext,
+): Promise<Record<string, unknown>> {
+  const action = resolveAction(args[0]);
+  const flags = parseConfigureFlags(args.slice(1), action);
+  validateRequiredFlags(flags, action);
 
   const device = deviceFromContext(context, flagString(flags, "device"));
   const portStr = flagString(flags, "port");

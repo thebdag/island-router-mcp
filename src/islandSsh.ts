@@ -211,6 +211,31 @@ function containsPager(text: string): boolean {
 
 // ─── Command execution ──────────────────────────────────────────────────────
 
+async function collectCommandOutput(
+  channel: ClientChannel,
+  waitMs: number,
+  maxPages: number,
+  page = 0,
+  output = "",
+): Promise<string> {
+  if (page >= maxPages) return output;
+
+  const chunk = await drain(channel, waitMs);
+  const allOutput = output + chunk;
+
+  if (containsPager(chunk)) {
+    channel.write(" ");
+    await new Promise<void>((resolve) => setTimeout(resolve, 300));
+    return collectCommandOutput(channel, waitMs, maxPages, page + 1, allOutput);
+  }
+
+  if (endsWithPrompt(allOutput) || chunk.length === 0) {
+    return allOutput;
+  }
+
+  return collectCommandOutput(channel, waitMs, maxPages, page + 1, allOutput);
+}
+
 /**
  * Send a single command to the Island Router CLI and return its output.
  *
@@ -233,29 +258,7 @@ export async function runCommand(
   // Send the command
   channel.write(cmd + "\n");
 
-  let allOutput = "";
-
-  for (let page = 0; page < maxPages; page++) {
-    const chunk = await drain(channel, waitMs);
-    allOutput += chunk;
-
-    // If we see a pager prompt, dismiss it with a space
-    if (containsPager(chunk)) {
-      channel.write(" ");
-      await new Promise((r) => setTimeout(r, 300));
-      continue;
-    }
-
-    // If we've landed on a CLI prompt, we're done
-    if (endsWithPrompt(allOutput)) {
-      break;
-    }
-
-    // No pager and no prompt yet — wait a bit more
-    if (chunk.length === 0) {
-      break; // silence — assume done
-    }
-  }
+  const allOutput = await collectCommandOutput(channel, waitMs, maxPages);
 
   return stripCommandEcho(allOutput, cmd);
 }

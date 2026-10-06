@@ -97,6 +97,21 @@ export interface PingResult {
   raw: string;
 }
 
+function parseRtt(line: string): [number, number, number] | undefined {
+  const equalsIndex = line.indexOf("=");
+  if (equalsIndex === -1) return undefined;
+
+  const label = line.slice(0, equalsIndex).toLowerCase();
+  if (!label.includes("round-trip") && !label.includes("rtt")) return undefined;
+
+  const values = line.slice(equalsIndex + 1).trim().split(/[\/\s]+/);
+  if (values.length < 3) return undefined;
+
+  const parsed = values.slice(0, 3).map((value) => Number.parseFloat(value));
+  if (parsed.some((value) => !Number.isFinite(value))) return undefined;
+  return [parsed[0]!, parsed[1]!, parsed[2]!];
+}
+
 /**
  * Parse ICMP ping output.
  *
@@ -149,11 +164,9 @@ export function parsePing(raw: string): PingResult {
     }
 
     // RTT line: "round-trip min/avg/max = 3.123/3.456/3.789 ms"
-    const rttMatch = /(?:round-trip|rtt)\s+\S+\s*=\s*([0-9.]+)\/([0-9.]+)\/([0-9.]+)/i.exec(line);
-    if (rttMatch) {
-      result.rttMin = Number.parseFloat(rttMatch[1] ?? "0");
-      result.rttAvg = Number.parseFloat(rttMatch[2] ?? "0");
-      result.rttMax = Number.parseFloat(rttMatch[3] ?? "0");
+    const rtt = parseRtt(line);
+    if (rtt) {
+      [result.rttMin, result.rttAvg, result.rttMax] = rtt;
     }
   }
 

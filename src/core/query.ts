@@ -3,7 +3,7 @@
  * Returns plain structured data — MCP and AXI adapt presentation.
  */
 
-import { runCommand, type DeviceConfig } from "../islandSsh.js";
+import { runCommand, runCommands, type DeviceConfig } from "../islandSsh.js";
 import { ALLOWED_SHOW_COMMANDS, isCommandAllowed, normalizeShowCommand } from "../allowedCommands.js";
 import { parseInterfaceDetail, parseInterfaceSummary } from "../parsers/interfaces.js";
 import { parseNeighbors, parseRoutes } from "../parsers/routes.js";
@@ -17,22 +17,16 @@ import { withSession } from "./session.js";
 import { validateSafe } from "./validate.js";
 
 export async function queryStatus(dev: DeviceConfig) {
-  const result = await withSession(dev, async (s) => {
-    const cmds = [
-      { cmd: "show interface summary", waitMs: 2000 },
-      { cmd: "show ip interface", waitMs: 2000 },
-      { cmd: "show ip routes", waitMs: 2000 },
-      { cmd: "show ip neighbors", waitMs: 2000 },
-      { cmd: "show version", waitMs: 2000 },
-      { cmd: "show stats", waitMs: 2000 },
-      { cmd: "show clock", waitMs: 1500 },
-    ];
-    const out: Record<string, string> = {};
-    for (const { cmd, waitMs } of cmds) {
-      out[cmd] = await runCommand(s, cmd, waitMs);
-    }
-    return out;
-  });
+  const commands = [
+    { cmd: "show interface summary", waitMs: 2000 },
+    { cmd: "show ip interface", waitMs: 2000 },
+    { cmd: "show ip routes", waitMs: 2000 },
+    { cmd: "show ip neighbors", waitMs: 2000 },
+    { cmd: "show version", waitMs: 2000 },
+    { cmd: "show stats", waitMs: 2000 },
+    { cmd: "show clock", waitMs: 1500 },
+  ];
+  const result = await withSession(dev, (session) => runCommands(session, commands));
 
   return {
     device_id: dev.id,
