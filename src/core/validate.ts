@@ -20,7 +20,7 @@ export function validateSafe(value: string, label: string): void {
 
 export function validateDomain(domain: string): void {
   validateSafe(domain, "domain");
-  if (!/^[\w.*-]+(?:\.[\w.*-]+)*$/.test(domain)) {
+  if (!/^[\w.*-]+$/.test(domain)) {
     throw new Error(`Invalid domain: '${domain}'`);
   }
 }
