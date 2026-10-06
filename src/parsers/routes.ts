@@ -36,16 +36,20 @@ function parseMetric(token: string | undefined): number | null {
 }
 
 function parseViaRoute(line: string): Route | undefined {
-  const [prefix, suffix, extra] = line.split(/\s+via\s+/i);
-  if (!prefix || !suffix || extra !== undefined) return undefined;
+  const words = line.trim().split(/\s+/);
+  const viaIndex = words.findIndex((word) => word.toLowerCase() === "via");
+  if (viaIndex < 2 || viaIndex === words.length - 1) return undefined;
 
-  const prefixParts = prefix.trim().split(/\s+/);
+  const prefix = words.slice(0, viaIndex).join(" ");
+  const suffix = words.slice(viaIndex + 1).join(" ");
+
+  const prefixParts = prefix.split(" ");
   const type = prefixParts[0];
   const dest = prefixParts[1];
   if (!type || !dest) return undefined;
 
   const commaIndex = suffix.indexOf(",");
-  const gatewayAndInterface = suffix.trim().split(/\s+/);
+  const gatewayAndInterface = suffix.split(" ");
   const gateway = commaIndex === -1
     ? gatewayAndInterface[0]
     : suffix.slice(0, commaIndex).trim();

@@ -270,11 +270,20 @@ export async function runCommands(
   session: ShellSession,
   commands: Array<{ cmd: string; waitMs?: number }>,
 ): Promise<Record<string, string>> {
-  const results: Record<string, string> = {};
-  for (const { cmd, waitMs } of commands) {
-    results[cmd] = await runCommand(session, cmd, waitMs);
-  }
-  return results;
+  return runCommandsSequentially(session, commands);
+}
+
+async function runCommandsSequentially(
+  session: ShellSession,
+  commands: Array<{ cmd: string; waitMs?: number }>,
+  index = 0,
+  results: Record<string, string> = {},
+): Promise<Record<string, string>> {
+  const command = commands[index];
+  if (!command) return results;
+
+  results[command.cmd] = await runCommand(session, command.cmd, command.waitMs);
+  return runCommandsSequentially(session, commands, index + 1, results);
 }
 
 // ─── Output cleaning ─────────────────────────────────────────────────────────

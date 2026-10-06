@@ -97,6 +97,33 @@ export interface PingResult {
   raw: string;
 }
 
+function parsePacketCount(
+  tokens: string[],
+  label: "received" | "sent" | "transmitted",
+): number | undefined {
+  for (let index = 0; index < tokens.length - 2; index++) {
+    const count = tokens[index];
+    if (
+      /^\d+$/.test(count ?? "") &&
+      (tokens[index + 1] === "packet" || tokens[index + 1] === "packets") &&
+      tokens[index + 2]?.toLowerCase() === label
+    ) {
+      return Number.parseInt(count!, 10);
+    }
+  }
+  return undefined;
+}
+
+function parsePingStats(line: string): { sent: number; received: number; lossPercent: number } | undefined {
+  const tokens = line.replaceAll(",", " ").replace("%", " %").trim().split(/\s+/);
+  const sent = parsePacketCount(tokens, "transmitted") ?? parsePacketCount(tokens, "sent");
+  const received = parsePacketCount(tokens, "received");
+  const percentIndex = tokens.indexOf("%");
+  const lossPercent = Number.parseFloat(tokens[percentIndex - 1] ?? "");
+  if (sent === undefined || received === undefined || !Number.isFinite(lossPercent)) return undefined;
+  return { sent, received, lossPercent };
+}
+
 function parseRtt(line: string): [number, number, number] | undefined {
   const equalsIndex = line.indexOf("=");
   if (equalsIndex === -1) return undefined;
@@ -104,7 +131,7 @@ function parseRtt(line: string): [number, number, number] | undefined {
   const label = line.slice(0, equalsIndex).toLowerCase();
   if (!label.includes("round-trip") && !label.includes("rtt")) return undefined;
 
-  const values = line.slice(equalsIndex + 1).trim().split(/[\/\s]+/);
+  const values = line.slice(equalsIndex + 1).trim().split(/[/\s]+/);
   if (values.length < 3) return undefined;
 
   const parsed = values.slice(0, 3).map((value) => Number.parseFloat(value));
@@ -155,11 +182,11 @@ export function parsePing(raw: string): PingResult {
     }
 
     // Stats line: "5 packets transmitted, 5 packets received, 0% packet loss"
-    const statsMatch = /(\d+)\s+packets?\s+(?:transmitted|sent),\s*(\d+)\s+packets?\s+received,\s*(\d+(?:\.\d+)?)%\s+(?:packet\s+)?loss/i.exec(line);
-    if (statsMatch) {
-      result.sent = Number.parseInt(statsMatch[1] ?? "0", 10);
-      result.received = Number.parseInt(statsMatch[2] ?? "0", 10);
-      result.lossPercent = Number.parseFloat(statsMatch[3] ?? "0");
+    const stats = parsePingStats(line);
+    if (stats) {
+      result.sent = stats.sent;
+      result.received = stats.received;
+      result.lossPercent = stats.lossPercent;
       result.lost = result.sent - result.received;
     }
 
