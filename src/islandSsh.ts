@@ -11,6 +11,7 @@
 
 import { Client, type ClientChannel, type ConnectConfig } from "ssh2";
 import fs from "node:fs";
+import { resolveLocalPath } from "./safePath.js";
 
 // ─── Device configuration ────────────────────────────────────────────────────
 
@@ -54,6 +55,13 @@ export interface CommandResult {
   raw: string;
 }
 
+function readPrivateKey(keyPath: string): Buffer {
+  const safePath = resolveLocalPath(keyPath, "privateKeyPath");
+  // safePath is confined to the cwd or home directory.
+  // nosec
+  return fs.readFileSync(safePath);
+}
+
 // ─── Connection ──────────────────────────────────────────────────────────────
 
 /**
@@ -86,7 +94,7 @@ export async function openSession(
     if (envKey) {
       connectConfig.privateKey = envKey;
     } else if (device.privateKeyPath) {
-      connectConfig.privateKey = fs.readFileSync(device.privateKeyPath);
+      connectConfig.privateKey = readPrivateKey(device.privateKeyPath);
     } else {
       throw new Error(
         `authMethod is 'key' for device '${device.id}', but neither ROUTER_KEY env var nor privateKeyPath is set`,

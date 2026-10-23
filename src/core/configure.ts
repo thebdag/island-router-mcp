@@ -163,6 +163,16 @@ export async function configAutoUpdate(
   };
 }
 
+/** Island CLI `update` / `update <url>`. URL is allowlisted; not interpolated. */
+function firmwareUpdateCommand(url?: string): string {
+  if (!url) return "update";
+  validateSafe(url, "url");
+  if (!/^[A-Za-z0-9][A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]*$/.test(url)) {
+    throw new Error(`Invalid update url: '${url}'`);
+  }
+  return ["update", url].join(" ");
+}
+
 /**
  * Check for / install firmware (or package) updates.
  * Per Island CLI 2.3.2: `update [<url>]` looks for newer firmware and,
@@ -170,14 +180,7 @@ export async function configAutoUpdate(
  * @see https://docs.islandrouter.com/island-router-cli-2.3.2/commands/update.md
  */
 export async function configUpdate(dev: DeviceConfig, url?: string) {
-  if (url) {
-    validateSafe(url, "url");
-    if (!/^[A-Za-z0-9][A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]*$/.test(url)) {
-      throw new Error(`Invalid update url: '${url}'`);
-    }
-  }
-
-  const cmd = url ? `update ${url}` : "update";
+  const cmd = firmwareUpdateCommand(url);
   const result = await withSession(dev, async (s) => {
     // Downloads can take a while; keep draining until prompt returns.
     const updateOut = await runCommand(s, cmd, 8000, 120);

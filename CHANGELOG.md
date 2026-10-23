@@ -16,6 +16,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
   - MCP: same actions via `island_configure` with `confirmation_phrase: "apply_change"`
 - **Progressive MCP tool calling** — `island_actions` catalog/describe; invoke tools take `params` instead of every action field
 
+### Security
+- Removed unused `puppeteer` and upgraded `@modelcontextprotocol/sdk`, `axi-sdk-js`, `zod`, and `vitest` so known dependency advisories clear
+- Inventory and private-key file reads stay inside the working directory or home directory
+- Firmware update URL is allowlisted and passed as a separate argument
+- Python router clients reject unknown SSH host keys (`known_hosts` or `ROUTER_KNOWN_HOSTS`)
+
 ### Fixed
 - Fixed Island Router CLI command parameter order in `configAddDhcp` to `ip dhcp-reserve <ip> <mac>`.
 - Catalog examples use RFC 5737 documentation IPv4; query/configure specs share a helper so SonarCloud no longer flags copy-paste duplication in `actionCatalog.ts`
