@@ -4,13 +4,30 @@
 
 import fs from "node:fs";
 import type { DeviceConfig } from "./islandSsh.js";
+import { PathAccessError, resolveLocalPath } from "./safePath.js";
+
+export function resolveInventoryPath(inventoryPath?: string): string {
+  const raw = inventoryPath ?? process.env["ISLAND_DEVICE_INVENTORY"] ?? "devices.json";
+  const resolved = resolveLocalPath(raw, "inventory path");
+  if (!resolved.endsWith(".json")) {
+    throw new PathAccessError("inventory path must be a .json file");
+  }
+  return resolved;
+}
+
+function readInventory(filePath: string): string {
+  // filePath is already confined to the cwd or home directory.
+  // nosec
+  return fs.readFileSync(filePath, "utf8");
+}
 
 export function loadDevices(inventoryPath?: string): DeviceConfig[] {
-  const path = inventoryPath ?? process.env["ISLAND_DEVICE_INVENTORY"] ?? "devices.json";
+  const path = resolveInventoryPath(inventoryPath);
 
   try {
-    return JSON.parse(fs.readFileSync(path, "utf8")) as DeviceConfig[];
-  } catch {
+    return JSON.parse(readInventory(path)) as DeviceConfig[];
+  } catch (error) {
+    if (error instanceof PathAccessError) throw error;
     return [
       {
         id: process.env["ISLAND_DEVICE_ID"] ?? "island-default",

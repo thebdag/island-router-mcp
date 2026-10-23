@@ -50,11 +50,20 @@ LEAF_COMMANDS = {
 IGNORE_TOKENS = {"?", "<cr>", "|"}
 
 
+def _prepare_client() -> paramiko.SSHClient:
+    """Trust only keys already in known_hosts (system file or ROUTER_KNOWN_HOSTS)."""
+    client = paramiko.SSHClient()
+    client.load_system_host_keys()
+    known_hosts = os.environ.get("ROUTER_KNOWN_HOSTS")
+    if known_hosts:
+        client.load_host_keys(os.path.expanduser(known_hosts))
+    return client
+
+
 def connect(host=ROUTER_HOST, port=ROUTER_PORT, username=ROUTER_USER,
             password=ROUTER_PASS, timeout=30, max_retries=5):
     """Open SSH interactive shell to the router with retry/backoff."""
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client = _prepare_client()
 
     for attempt in range(1, max_retries + 1):
         try:
@@ -68,6 +77,12 @@ def connect(host=ROUTER_HOST, port=ROUTER_PORT, username=ROUTER_USER,
             drain(shell)
             return client, shell
         except (paramiko.SSHException, EOFError, OSError) as e:
+            if isinstance(e, paramiko.BadHostKeyException) or "not found in known_hosts" in str(e):
+                raise paramiko.SSHException(
+                    f"{e}. Add the router host key first: "
+                    f"ssh-keyscan -p {port} {host} >> ~/.ssh/known_hosts "
+                    "(or set ROUTER_KNOWN_HOSTS)."
+                ) from e
             if attempt == max_retries:
                 raise
             wait = min(10 * attempt, 60)

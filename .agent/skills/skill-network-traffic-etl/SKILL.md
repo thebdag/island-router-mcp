@@ -266,7 +266,10 @@ ROUTER_PASS = os.getenv("ROUTER_PASS", "")
 def connect():
     """Establish SSH connection and return interactive shell channel."""
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.load_system_host_keys()
+    known_hosts = os.getenv("ROUTER_KNOWN_HOSTS")
+    if known_hosts:
+        client.load_host_keys(os.path.expanduser(known_hosts))
     client.connect(ROUTER_IP, username=ROUTER_USER, password=ROUTER_PASS)
     channel = client.invoke_shell()
 

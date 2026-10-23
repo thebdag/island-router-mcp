@@ -15,7 +15,7 @@ import fs from "node:fs";
 import "dotenv/config";
 
 import type { DeviceConfig } from "./islandSsh.js";
-import { getDeviceOrThrow as lookupDevice, loadDevices } from "./devices.js";
+import { getDeviceOrThrow as lookupDevice, loadDevices, resolveInventoryPath } from "./devices.js";
 import {
   ActionCatalogError,
   CONFIGURE_ACTIONS,
@@ -31,7 +31,7 @@ import {
   type QueryParams,
 } from "./core/index.js";
 
-const inventoryPath = process.env["ISLAND_DEVICE_INVENTORY"] ?? "devices.json";
+const inventoryPath = resolveInventoryPath();
 const devices: DeviceConfig[] = loadDevices(inventoryPath);
 if (!fs.existsSync(inventoryPath)) {
   process.stderr.write(

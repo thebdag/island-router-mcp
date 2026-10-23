@@ -31,6 +31,16 @@ PAGER_PROMPTS = ("(press RETURN)", "--More--", "--- more ---", "Press any key")
 
 # ─── Core connection ──────────────────────────────────────────────────────────
 
+def _prepare_client() -> paramiko.SSHClient:
+    """Trust only keys already in known_hosts (system file or ROUTER_KNOWN_HOSTS)."""
+    client = paramiko.SSHClient()
+    client.load_system_host_keys()
+    known_hosts = os.environ.get("ROUTER_KNOWN_HOSTS")
+    if known_hosts:
+        client.load_host_keys(os.path.expanduser(known_hosts))
+    return client
+
+
 def connect_router(
     host: str = ROUTER_HOST,
     port: int = ROUTER_PORT,
@@ -54,8 +64,7 @@ def connect_router(
             "Export it before running: export ROUTER_PASS='yourpassword'"
         )
 
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client = _prepare_client()
 
     connect_kwargs = dict(
         hostname=host,
@@ -72,7 +81,16 @@ def connect_router(
         connect_kwargs["password"] = password
         connect_kwargs["look_for_keys"] = False
 
-    client.connect(**connect_kwargs)
+    try:
+        client.connect(**connect_kwargs)
+    except paramiko.SSHException as exc:
+        if isinstance(exc, paramiko.BadHostKeyException) or "not found in known_hosts" in str(exc):
+            raise paramiko.SSHException(
+                f"{exc}. Add the router host key first: "
+                f"ssh-keyscan -p {port} {host} >> ~/.ssh/known_hosts "
+                "(or set ROUTER_KNOWN_HOSTS)."
+            ) from exc
+        raise
 
     # Wide terminal so output isn't line-wrapped mid-token
     shell = client.invoke_shell(width=220, height=50)
