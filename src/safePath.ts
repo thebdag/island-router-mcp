@@ -19,12 +19,12 @@ export function resolveLocalPath(input: string, label: string): string {
     throw new PathAccessError(`Invalid ${label}`);
   }
 
-  const expanded =
-    input === "~"
-      ? os.homedir()
-      : input.startsWith("~/")
-        ? path.join(os.homedir(), input.slice(2))
-        : input;
+  let expanded = input;
+  if (input === "~") {
+    expanded = os.homedir();
+  } else if (input.startsWith("~/")) {
+    expanded = path.join(os.homedir(), input.slice(2));
+  }
   const resolved = path.resolve(expanded);
   const roots = [process.cwd(), os.homedir()].map((root) => path.resolve(root));
   const allowed = roots.some(
