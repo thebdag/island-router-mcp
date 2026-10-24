@@ -18,6 +18,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Security
 - Removed unused `puppeteer` and upgraded `@modelcontextprotocol/sdk`, `axi-sdk-js`, `zod`, and `vitest` so known dependency advisories clear
+- Upgraded `zod` to 4.6.7 and pinned `ajv` 8.20.0, `jose` 6.2.5, and `raw-body` 4.0.0 so open Aikido dependency findings clear. Runtime is Node.js 22+ because `raw-body` 4 drops Node 20
 - Inventory and private-key file reads stay inside the working directory or home directory
 - Firmware update URL is allowlisted and passed as a separate argument
 - Python router clients reject unknown SSH host keys (`known_hosts` or `ROUTER_KNOWN_HOSTS`)

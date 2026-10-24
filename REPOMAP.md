@@ -8,7 +8,7 @@
 
 | | |
 | --- | --- |
-| Stack | TypeScript · Node 20+ · ESM · ssh2 · Zod · MCP SDK · axi-sdk-js |
+| Stack | TypeScript · Node 22+ · ESM · ssh2 · Zod · MCP SDK · axi-sdk-js |
 | Surfaces | MCP (`island-mcp-server`) · AXI CLI (`island-axi`) |
 | Agent docs | `AGENTS.md` → this file → `CODING-STANDARDS.md` → `CHANGELOG.md` |
 | Skills | `.agent/skills/` (also `.agents/skills/` symlink) |

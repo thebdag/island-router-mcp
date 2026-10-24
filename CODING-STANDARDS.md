@@ -10,7 +10,7 @@ Development conventions for the Island Router MCP Server + `island-axi` CLI.
 ## Language & Runtime
 
 - **TypeScript** with `strict: true` — no implicit `any`, no unchecked nulls.
-- **Node.js 20+** with ESM (`"type": "module"` in package.json).
+- **Node.js 22+** with ESM (`"type": "module"` in package.json).
 - **Module resolution**: `NodeNext` — all local imports must use `.js` extensions.
 - **Target**: `ES2022` — use modern syntax (`??`, `?.`, `using`, top-level await).
 

@@ -108,7 +108,7 @@ Located in `.agent/skills/` (and installable `skills/island-axi/`), these are AI
 
 ## Prerequisites
 
-- **Node.js 20+**
+- **Node.js 22+**
 - SSH access to one or more Island Routers
 - Password or SSH key authentication configured
 

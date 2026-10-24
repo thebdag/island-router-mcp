@@ -56,7 +56,7 @@ function asErrorPayload(action: string, err: unknown): McpText {
 }
 
 const ParamsRecord = z
-  .record(z.union([z.string(), z.number(), z.boolean()]))
+  .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
   .optional()
   .describe(
     "Action-specific fields. Call island_actions with action=<name> for the schema and example.",
