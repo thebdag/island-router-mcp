@@ -25,6 +25,8 @@ import { dhcpCommand } from "./commands/dhcp.js";
 import { ntpCommand } from "./commands/ntp.js";
 import { dnsRedirectsCommand } from "./commands/dnsRedirects.js";
 import { pingCommand } from "./commands/ping.js";
+import { vlansCommand } from "./commands/vlans.js";
+import { subscribersCommand } from "./commands/subscribers.js";
 import { showCommand } from "./commands/show.js";
 import { configureCommand } from "./commands/configure.js";
 import { setupCommand } from "./commands/setup.js";
@@ -61,6 +63,8 @@ await runAxiCli({
     ntp: (args, context) => ntpCommand(args, context),
     "dns-redirects": (args, context) => dnsRedirectsCommand(args, context),
     ping: (args, context) => pingCommand(args, context),
+    vlans: (args, context) => vlansCommand(args, context),
+    subscribers: (args, context) => subscribersCommand(args, context),
     show: (args, context) => showCommand(args, context),
     configure: (args, context) => configureCommand(args, context),
     setup: (args) => setupCommand(args),

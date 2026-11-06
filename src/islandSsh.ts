@@ -30,10 +30,10 @@ export interface DeviceConfig {
 
 // ─── Prompt & pager constants ────────────────────────────────────────────────
 
-const PROMPT_SUFFIXES = ["# ", "> ", "$ "] as const;
+const PROMPT_SUFFIXES = ["#", ">", "$"] as const;
 
 /** Regex that matches a CLI prompt at the end of buffered output */
-const PROMPT_RE = /(?:Router(?:\([^)]*\))?[#>$])\s*$/;
+const PROMPT_RE = /(?:[\w.-]+(?:\([^)]*\))?[#>$])\s*$/;
 
 /** Pager strings the router emits mid-output — we auto-dismiss with a space */
 const PAGER_PROMPTS = [

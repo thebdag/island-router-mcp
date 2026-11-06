@@ -13,6 +13,8 @@ import { parseVpnPeers } from "../parsers/vpn.js";
 import { parseNtpAssociations, parseNtpConfig, parseNtpStatus } from "../parsers/ntp.js";
 import { parsePing, parseSpeedtest, parseVersion } from "../parsers/system.js";
 import { parseDnsRedirects } from "../parsers/dnsRedirects.js";
+import { parseVlans } from "../parsers/vlans.js";
+import { parseSubscribers } from "../parsers/subscribers.js";
 import { withSession } from "./session.js";
 import { validateSafe } from "./validate.js";
 
@@ -153,6 +155,54 @@ export async function queryPing(dev: DeviceConfig, target: string) {
   return { device_id: dev.id, ping: parsePing(output) };
 }
 
+export async function queryVlans(dev: DeviceConfig) {
+  const result = await withSession(dev, async (s) => ({
+    config: await runCommand(s, "show running-config", 4000),
+    summary: await runCommand(s, "show interface summary", 2000),
+  }));
+  const summaries = parseInterfaceSummary(result.summary);
+  const vlans = parseVlans(result.config, summaries);
+  return {
+    device_id: dev.id,
+    count: vlans.length,
+    vlans,
+  };
+}
+
+export async function querySubscribers(
+  dev: DeviceConfig,
+  time = "1d",
+  category?: string,
+) {
+  validateSafe(time, "time");
+  if (category) validateSafe(category, "category");
+  const result = await withSession(dev, async (s) => ({
+    neighbors: await runCommand(s, "show ip neighbors", 2000),
+    reservations: await runCommand(s, "show ip dhcp-reservations csv", 2000),
+    dhcpd: await runCommand(s, "show stats json dhcpd", 2000),
+    history: await runCommand(s, `show history begin ${time} first %m format json`, 4000),
+  }));
+  const neighbors = parseNeighbors(result.neighbors);
+  const reservations = parseDhcpReservationsCsv(result.reservations);
+  let subscribers = parseSubscribers({
+    neighbors,
+    reservations,
+    dhcpdStatsRaw: result.dhcpd,
+    historyRaw: result.history,
+  });
+  if (category) {
+    const targetCat = category.trim().toLowerCase();
+    subscribers = subscribers.filter((s) => s.category.toLowerCase() === targetCat);
+  }
+  return {
+    device_id: dev.id,
+    count: subscribers.length,
+    time_range: time,
+    category: category ?? null,
+    subscribers,
+  };
+}
+
 export const QUERY_ACTIONS = [
   "status",
   "interfaces",
@@ -169,6 +219,8 @@ export const QUERY_ACTIONS = [
   "dns_redirects",
   "command",
   "ping",
+  "vlans",
+  "subscribers",
 ] as const;
 
 export type QueryAction = (typeof QUERY_ACTIONS)[number];
@@ -179,6 +231,7 @@ export interface QueryParams {
   target?: string;
   detail?: boolean;
   time?: string;
+  category?: string;
 }
 
 /** Dispatch a read action by name. */
@@ -210,6 +263,10 @@ export async function dispatchQuery(dev: DeviceConfig, params: QueryParams) {
       return queryNtp(dev);
     case "dns_redirects":
       return queryDnsRedirects(dev);
+    case "vlans":
+      return queryVlans(dev);
+    case "subscribers":
+      return querySubscribers(dev, params.time ?? "1d", params.category);
     case "command": {
       if (!params.command) throw new Error("'command' parameter required for action='command'");
       return queryCommand(dev, params.command);

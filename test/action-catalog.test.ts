@@ -70,6 +70,22 @@ describe("describeAction", () => {
     const spec = describeAction("add_dhcp");
     expect(spec.kind).toBe("configure");
     expect(spec.params.map((p) => p.name)).toEqual(["mac", "ip", "hostname"]);
+
+    const vlanSpec = describeAction("create_vlan");
+    expect(vlanSpec.kind).toBe("configure");
+    expect(vlanSpec.params.map((p) => p.name)).toEqual([
+      "vlan_id",
+      "parent",
+      "cidr",
+      "description",
+      "dhcp_server",
+      "dhcp_scope",
+      "dhcp_lease",
+    ]);
+
+    const subSpec = describeAction("subscribers");
+    expect(subSpec.kind).toBe("query");
+    expect(subSpec.params.map((p) => p.name)).toEqual(["time", "category"]);
   });
 
   it("throws ActionCatalogError for unknown names", () => {

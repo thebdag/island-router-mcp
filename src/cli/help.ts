@@ -20,6 +20,8 @@ COMMANDS
   ntp              NTP config + sync status
   dns-redirects    DNS redirect / sinkhole rules
   ping             ICMP ping from the router
+  vlans            VLAN interfaces from running-config
+  subscribers      Discovered network devices with IoT classification
   show             Run an allowlisted show command
   configure        Write operations (requires --confirm)
   setup            Install agent session hooks
@@ -200,6 +202,36 @@ EXAMPLES
   island-axi ping google.com --device island-edge-1
 `,
 
+  vlans: `island-axi vlans [--device <id>] [--fields name,vlanId,parent,ipAddress,status]
+
+List VLAN interfaces from running-config and interface summary.
+
+FLAGS
+  --device <id>
+  --fields <list>    Comma-separated fields
+
+EXAMPLES
+  island-axi vlans
+  island-axi vlans --fields name,parent,ipAddress,dhcpServer
+`,
+
+  subscribers: `island-axi subscribers [--device <id>] [--category <cat>] [--time <range>] [--fields <list>] [--limit N]
+
+Discovered network devices with IoT/media/infrastructure classification.
+
+FLAGS
+  --device <id>
+  --category <cat>   Filter by: iot, media, infrastructure, compute, unknown
+  --time <range>     History lookup range (default: 1d)
+  --fields <list>    Comma-separated fields
+  --limit <n>        Max rows (default 100)
+
+EXAMPLES
+  island-axi subscribers
+  island-axi subscribers --category iot
+  island-axi subscribers --category media --limit 20
+`,
+
   show: `island-axi show <command...> [--device <id>] [--full]
 
 Run an allowlisted read-only show command.
@@ -235,6 +267,8 @@ ACTIONS
   set-ntp --server <addr>
   add-dns-redirect --domain <name> --redirect-server <ip>
   remove-dns-redirect --domain <name>
+  create-vlan --vlan-id <id> --parent <iface> --cidr <ip/bits> [--description <desc>] [--dhcp-server] [--dhcp-scope <low-high>] [--dhcp-lease <secs>]
+  delete-vlan --vlan-id <id>
 
 FLAGS
   --device <id>
@@ -243,6 +277,7 @@ FLAGS
 EXAMPLES
   island-axi configure set-hostname --hostname edge1 --confirm
   island-axi configure add-dhcp --mac aa:bb:cc:dd:ee:ff --ip 192.168.2.50 --confirm
+  island-axi configure create-vlan --vlan-id 20 --parent en1 --cidr 192.168.20.1/24 --description "IoT VLAN" --confirm
   island-axi configure update --confirm
 `,
 

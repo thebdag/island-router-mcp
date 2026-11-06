@@ -11,6 +11,10 @@ export {
   validateSafe,
   validateDomain,
   requireParam,
+  validateVlanId,
+  validateInterfaceName,
+  validateCidr,
+  validateDhcpScope,
 } from "./validate.js";
 export { SYSLOG_LEVEL_NAMES } from "./syslog.js";
 export {
@@ -33,6 +37,8 @@ export {
   queryDnsRedirects,
   queryCommand,
   queryPing,
+  queryVlans,
+  querySubscribers,
 } from "./query.js";
 export {
   ACTION_CATALOG,
@@ -52,6 +58,7 @@ export {
   CONFIGURE_ACTIONS,
   type ConfigureAction,
   type ConfigureParams,
+  type CreateVlanOptions,
   dispatchConfigure,
   configAddDhcp,
   configRemoveDhcp,
@@ -66,4 +73,6 @@ export {
   configNtp,
   configAddDnsRedirect,
   configRemoveDnsRedirect,
+  configCreateVlan,
+  configDeleteVlan,
 } from "./configure.js";

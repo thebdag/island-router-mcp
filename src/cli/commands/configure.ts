@@ -21,6 +21,8 @@ const ACTIONS = [
   "set-ntp",
   "add-dns-redirect",
   "remove-dns-redirect",
+  "create-vlan",
+  "delete-vlan",
 ] as const;
 
 type Action = (typeof ACTIONS)[number];
@@ -39,6 +41,8 @@ const ACTION_TO_CORE: Record<Action, string> = {
   "set-ntp": "set_ntp",
   "add-dns-redirect": "add_dns_redirect",
   "remove-dns-redirect": "remove_dns_redirect",
+  "create-vlan": "create_vlan",
+  "delete-vlan": "delete_vlan",
 };
 
 const ACTION_FLAGS: Record<Action, string[]> = {
@@ -55,6 +59,18 @@ const ACTION_FLAGS: Record<Action, string[]> = {
   "set-ntp": ["device", "server", "confirm"],
   "add-dns-redirect": ["device", "domain", "redirect-server", "confirm"],
   "remove-dns-redirect": ["device", "domain", "confirm"],
+  "create-vlan": [
+    "device",
+    "vlan-id",
+    "parent",
+    "cidr",
+    "description",
+    "dhcp-server",
+    "dhcp-scope",
+    "dhcp-lease",
+    "confirm",
+  ],
+  "delete-vlan": ["device", "vlan-id", "confirm"],
 };
 
 const REQUIRED_FLAGS: Partial<Record<Action, readonly string[]>> = {
@@ -68,6 +84,8 @@ const REQUIRED_FLAGS: Partial<Record<Action, readonly string[]>> = {
   "set-ntp": ["server"],
   "add-dns-redirect": ["domain", "redirect-server"],
   "remove-dns-redirect": ["domain"],
+  "create-vlan": ["vlan-id", "parent", "cidr"],
+  "delete-vlan": ["vlan-id"],
 };
 
 function requireFlag(
@@ -150,6 +168,9 @@ export async function configureCommand(
   const device = deviceFromContext(context, flagString(flags, "device"));
   const portStr = flagString(flags, "port");
   const levelStr = flagString(flags, "level");
+  const vlanIdStr = flagString(flags, "vlan-id");
+  const dhcpLeaseStr = flagString(flags, "dhcp-lease");
+  const dhcpServerFlag = flags["dhcp-server"];
 
   const result = await callCore(() =>
     dispatchConfigure(device, {
@@ -173,6 +194,13 @@ export async function configureCommand(
       ntp_server: flagString(flags, "server"),
       domain: flagString(flags, "domain"),
       redirect_server: flagString(flags, "redirect-server"),
+      vlan_id: vlanIdStr ? Number.parseInt(vlanIdStr, 10) : undefined,
+      parent: flagString(flags, "parent"),
+      cidr: flagString(flags, "cidr"),
+      description: flagString(flags, "description"),
+      dhcp_server: dhcpServerFlag !== undefined ? flagBool(flags, "dhcp-server") : undefined,
+      dhcp_scope: flagString(flags, "dhcp-scope"),
+      dhcp_lease: dhcpLeaseStr ? Number.parseInt(dhcpLeaseStr, 10) : undefined,
     }),
   );
 
@@ -194,6 +222,8 @@ export async function configureCommand(
     "set-ntp": ["Run `island-axi ntp` to verify sync status"],
     "add-dns-redirect": ["Run `island-axi dns-redirects` to list rules"],
     "remove-dns-redirect": ["Run `island-axi dns-redirects` to verify"],
+    "create-vlan": ["Run `island-axi vlans` to inspect VLAN interfaces"],
+    "delete-vlan": ["Run `island-axi vlans` to verify removal"],
     update: [
       "Run `island-axi show version` and `island-axi show \"version history\"` to verify",
       "If an update is stuck: `island-axi configure clear-update --confirm`",

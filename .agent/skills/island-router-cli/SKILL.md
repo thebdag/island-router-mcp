@@ -174,6 +174,71 @@ exit                        # Move up one level / logout from global
 
 ---
 
+### VLAN Configuration & Network Segmentation
+
+The Island Router supports 802.1Q tagged VLANs. Physical and VLAN interfaces assigned distinct IP networks are **automatically isolated** from one another, enabling secure segmentation (such as isolating IoT devices or guest networks from the primary LAN) with outbound Internet access preserved.
+
+#### Creating a VLAN Interface
+
+To create and configure a VLAN, select the virtual interface `vlan<id>` (`1..4094`) and configure its parent port, mode, IP address, and DHCP server:
+
+```text
+interface vlan20
+parent en1
+ip autoconfig lan
+ip address 192.168.20.1/24
+ip dhcp-server on
+ip dhcp-scope 50-250
+ip dhcp-lease 1800
+description "IoT VLAN"
+end
+write memory
+```
+
+> **Rules:**
+> - `parent <interface>` is **required** for VLAN interfaces to bind the tag to a physical trunk link (e.g. `en1`).
+> - `end` exits interface context back to the global prompt.
+> - `write memory` persists the running configuration.
+
+#### Deleting a VLAN Interface
+
+To remove a virtual interface, run `no interface <name>` directly from the global prompt:
+
+```text
+no interface vlan20
+write memory
+```
+
+#### UniFi Network Integration for IoT Segmentation
+
+When pairing Island Router with UniFi switches and access points:
+1. **Create UniFi Third-Party Gateway Network**:
+   In UniFi Network Controller -> *Settings* -> *Networks* -> *New Network*:
+   - Name: `IoT`
+   - Router: `Third-Party Gateway`
+   - VLAN ID: `20`
+2. **Assign IoT Clients to the VLAN**:
+   - **Wi-Fi Clients (Same SSID)**: UniFi *Clients* -> select IoT device -> *Settings* -> enable **Virtual Network Override** -> select `IoT`.
+   - **Wi-Fi Clients (Dedicated SSID)**: Create an SSID (e.g. `MyNetwork-IoT`) assigned to the `IoT` network.
+   - **Wired Clients**: UniFi *Devices* -> select Switch -> *Ports* -> set Native VLAN to `IoT (20)`.
+3. **Static Reservations**:
+   If an IoT device has a reserved IP, migrate it to the new VLAN subnet:
+   ```text
+   ip dhcp-reserve 192.168.20.50 aa:bb:cc:dd:ee:ff smart-plug
+   write memory
+   ```
+4. **Discovering IoT Devices (Fingerprinting)**:
+   Island Router fingerprints subscribers via SSDP/mDNS and DHCP. Query history and DHCP stats to classify devices:
+   ```text
+   show history begin 1d first %m format json
+   show stats json dhcpd
+   show ip dhcp-reservations csv
+   show ip neighbors
+   ```
+   Or use `island-axi subscribers --category iot`.
+
+---
+
 ### IP Configuration
 
 **IP commands are valid ONLY in interface context** (after `interface <name>`):

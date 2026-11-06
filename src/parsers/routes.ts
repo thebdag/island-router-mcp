@@ -16,11 +16,14 @@ export interface Neighbor {
   mac: string;
   interface: string;
   state: string;
+  hostname?: string;
 }
 
 // Pre-compiled regexes
 const DIRECT_RE = /^([A-Z*]+)\s+(\S+)\s+is\s+directly\s+connected,?\s*(\S*)$/i;
 const IP_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+const LINE_NEIGHBOR_RE =
+  /^IP\s+(\S+)\s+(\S+)\s+.*?\bMAC\s+([0-9a-fA-F:.-]{11,17})\s+(\S+)(?:\s+.*?\bref\s+\d+\s+age\s+\d+(?:\s+(.*))?)?$/i;
 
 /** Split a CIDR destination into separate destination and mask fields. */
 function splitCidr(dest: string): { destination: string; mask: string } {
@@ -123,6 +126,18 @@ export function parseNeighbors(raw: string): Neighbor[] {
 
   let dataStarted = false;
   for (const line of lines) {
+    const lineMatch = LINE_NEIGHBOR_RE.exec(line);
+    if (lineMatch) {
+      results.push({
+        ip: lineMatch[1] ?? "",
+        mac: (lineMatch[3] ?? "").toLowerCase(),
+        interface: lineMatch[2] ?? "",
+        state: lineMatch[4] ?? "",
+        hostname: lineMatch[5]?.trim() || undefined,
+      });
+      continue;
+    }
+
     if (!dataStarted) {
       if (/ip\s+address/i.test(line) || /^-{3,}/.test(line)) {
         dataStarted = true;
@@ -138,7 +153,7 @@ export function parseNeighbors(raw: string): Neighbor[] {
     if (parts.length >= 4 && IP_RE.test(parts[0] ?? "")) {
       results.push({
         ip: parts[0] ?? "",
-        mac: parts[1] ?? "",
+        mac: (parts[1] ?? "").toLowerCase(),
         interface: parts[2] ?? "",
         state: parts.slice(3).join(" "),
       });

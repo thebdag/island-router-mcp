@@ -9,6 +9,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 ## [Unreleased]
 
 ### Added
+- **VLAN management actions** (official CLI 2.3.2):
+  - `vlans` — query action parsing configured VLAN interfaces from `show running-config` and merging operational status from `show interface summary`
+  - `create_vlan` — configure action to provision VLAN sub-interfaces (`interface vlan<id>`, `parent <iface>`, `ip autoconfig lan`, `ip address <cidr>`, `ip dhcp-server`, optional scope/lease/description, `end`, `write memory`)
+  - `delete_vlan` — configure action to delete VLAN sub-interfaces (`no interface vlan<id>`, `write memory`)
+  - AXI: `island-axi vlans`, `island-axi configure create-vlan ... --confirm`, `island-axi configure delete-vlan ... --confirm`
+  - MCP: `vlans`, `create_vlan`, `delete_vlan` in `island_actions` catalog
+- **Subscriber & IoT device discovery**:
+  - `subscribers` — query action combining ARP (`show ip neighbors`), DHCP reservations (`show ip dhcp-reservations csv`), DHCP leases (`show stats json dhcpd`), and native Island subscriber SSDP/mDNS history fingerprinting (`show history first %m format json`)
+  - Heuristic classifier with OUI, hostname, and destination domain tagging (`iot`, `media`, `infrastructure`, `compute`, `unknown`)
+  - AXI: `island-axi subscribers [--category <cat>] [--time <range>] [--limit N]`
+  - MCP: `subscribers` action with `category` and `time` params
 - **Firmware update actions** (official CLI 2.3.2):
   - `update` — `update [<url>]` checks for newer firmware and installs if found; optional URL/filename
   - `clear_update` — `clear update` stops a stuck/incomplete update
@@ -24,6 +35,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Fixed
 - Fixed Island Router CLI command parameter order in `configAddDhcp` to `ip dhcp-reserve <ip> <mac>`.
+- Fixed SSH prompt detection in `src/islandSsh.ts` to support custom router hostnames and trimmed prompt suffixes.
+- Enhanced subscriber classifier in `src/parsers/subscribers.ts` to evaluate infrastructure/compute keywords against device identity (hostname, description, vendor) rather than visited destination domains.
+- Added dual-stack IPv4/IPv6 support and parent status inheritance to VLAN parser in `src/parsers/vlans.ts`.
 - Catalog examples use RFC 5737 documentation IPv4; query/configure specs share a helper so SonarCloud no longer flags copy-paste duplication in `actionCatalog.ts`
 
 ### Removed

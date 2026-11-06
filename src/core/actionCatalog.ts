@@ -141,6 +141,28 @@ const QUERY_SPECS: ActionSpec[] = [
     ],
     { target: EXAMPLE_IPV4 },
   ),
+  makeSpec("vlans", "query", "List VLAN interfaces from running-config and operational status"),
+  makeSpec(
+    "subscribers",
+    "query",
+    "Discovered network devices with IoT/media/infrastructure classification",
+    [
+      {
+        name: "time",
+        type: "string",
+        required: false,
+        description: "History lookup range such as 1d, 12h, 1w (default 1d)",
+      },
+      {
+        name: "category",
+        type: "string",
+        required: false,
+        description: "Filter by category: iot, media, infrastructure, compute, unknown",
+        enum: ["iot", "media", "infrastructure", "compute", "unknown"],
+      },
+    ],
+    { time: "1d", category: "iot" },
+  ),
 ];
 
 const CONFIGURE_SPECS: ActionSpec[] = [
@@ -300,6 +322,37 @@ const CONFIGURE_SPECS: ActionSpec[] = [
     "Remove DNS redirect for a domain",
     [{ name: "domain", type: "string", required: true, description: "Domain to un-redirect" }],
     { domain: "ads.example.com" },
+  ),
+  makeSpec(
+    "create_vlan",
+    "configure",
+    "Create and configure a VLAN interface (parent, CIDR, DHCP)",
+    [
+      { name: "vlan_id", type: "number", required: true, description: "VLAN ID (1–4094)" },
+      { name: "parent", type: "string", required: true, description: "Parent physical interface (e.g. en1)" },
+      { name: "cidr", type: "string", required: true, description: "Gateway IPv4 CIDR (e.g. 192.0.2.1/24)" },
+      { name: "description", type: "string", required: false, description: "Interface description" },
+      { name: "dhcp_server", type: "boolean", required: false, description: "Enable DHCP server (default true)" },
+      { name: "dhcp_scope", type: "string", required: false, description: "DHCP pool range (e.g. 50-250)" },
+      { name: "dhcp_lease", type: "number", required: false, description: "DHCP lease time in seconds" },
+    ],
+    {
+      vlan_id: 20,
+      parent: "en1",
+      cidr: "192.0.2.1/24",
+      description: "IoT VLAN",
+      dhcp_server: true,
+      dhcp_scope: "50-250",
+    },
+  ),
+  makeSpec(
+    "delete_vlan",
+    "configure",
+    "Delete a VLAN interface (no interface vlan<id>)",
+    [
+      { name: "vlan_id", type: "number", required: true, description: "VLAN ID to delete" },
+    ],
+    { vlan_id: 20 },
   ),
 ];
 

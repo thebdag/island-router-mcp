@@ -5,16 +5,22 @@
 
 import { runCommand, type DeviceConfig } from "../islandSsh.js";
 import { parseDnsRedirects } from "../parsers/dnsRedirects.js";
+import { parseInterfaceSummary } from "../parsers/interfaces.js";
 import { parseSyslogConfig } from "../parsers/logs.js";
 import { parseVersion } from "../parsers/system.js";
+import { parseVlans } from "../parsers/vlans.js";
 import { withSession } from "./session.js";
 import { SYSLOG_LEVEL_NAMES } from "./syslog.js";
 import {
   requireParam,
+  validateCidr,
+  validateDhcpScope,
   validateDomain,
+  validateInterfaceName,
   validateIp,
   validateMac,
   validateSafe,
+  validateVlanId,
 } from "./validate.js";
 
 export async function configAddDhcp(
@@ -320,6 +326,99 @@ export async function configRemoveDnsRedirect(dev: DeviceConfig, domain: string)
   };
 }
 
+export interface CreateVlanOptions {
+  vlanId: number;
+  parent: string;
+  cidr: string;
+  description?: string;
+  dhcpServer?: boolean;
+  dhcpScope?: string;
+  dhcpLease?: number;
+}
+
+export async function configCreateVlan(
+  dev: DeviceConfig,
+  opts: CreateVlanOptions,
+) {
+  validateVlanId(opts.vlanId);
+  validateInterfaceName(opts.parent);
+  validateCidr(opts.cidr);
+  if (opts.dhcpScope) validateDhcpScope(opts.dhcpScope);
+  if (opts.description) validateSafe(opts.description, "description");
+
+  const vlanName = `vlan${opts.vlanId}`;
+  const dhcpServer = opts.dhcpServer ?? true;
+
+  const result = await withSession(dev, async (s) => {
+    const commandsOut: string[] = [];
+    commandsOut.push(await runCommand(s, `interface ${vlanName}`, 2000));
+    commandsOut.push(await runCommand(s, `parent ${opts.parent}`, 2000));
+    commandsOut.push(
+      await runCommand(s, `ip autoconfig ${dhcpServer ? "lan" : "lan-no-dhcp"}`, 2000),
+    );
+    commandsOut.push(await runCommand(s, `ip address ${opts.cidr}`, 2000));
+    commandsOut.push(await runCommand(s, `ip dhcp-server ${dhcpServer ? "on" : "off"}`, 2000));
+    if (opts.dhcpScope) {
+      commandsOut.push(await runCommand(s, `ip dhcp-scope ${opts.dhcpScope}`, 2000));
+    }
+    if (opts.dhcpLease) {
+      commandsOut.push(await runCommand(s, `ip dhcp-lease ${opts.dhcpLease}`, 2000));
+    }
+    if (opts.description) {
+      commandsOut.push(await runCommand(s, `description "${opts.description}"`, 2000));
+    }
+    commandsOut.push(await runCommand(s, "end", 2000));
+    const writeOut = await runCommand(s, "write memory", 3000);
+    const runConfig = await runCommand(s, "show running-config", 4000);
+    const summary = await runCommand(s, "show interface summary", 2000);
+    return { commandsOut, writeOut, runConfig, summary };
+  });
+
+  const vlans = parseVlans(result.runConfig, parseInterfaceSummary(result.summary));
+  const createdVlan = vlans.find((v) => v.vlanId === opts.vlanId);
+
+  return {
+    applied: true,
+    device_id: dev.id,
+    vlan_id: opts.vlanId,
+    name: vlanName,
+    parent: opts.parent,
+    cidr: opts.cidr,
+    dhcp_server: dhcpServer,
+    dhcp_scope: opts.dhcpScope ?? null,
+    dhcp_lease: opts.dhcpLease ?? null,
+    description: opts.description ?? null,
+    write_output: result.writeOut,
+    vlan: createdVlan ?? null,
+    active_vlans: vlans,
+  };
+}
+
+export async function configDeleteVlan(dev: DeviceConfig, vlanId: number) {
+  validateVlanId(vlanId);
+  const vlanName = `vlan${vlanId}`;
+
+  const result = await withSession(dev, async (s) => {
+    const configOut = await runCommand(s, `no interface ${vlanName}`, 2000);
+    const writeOut = await runCommand(s, "write memory", 3000);
+    const runConfig = await runCommand(s, "show running-config", 4000);
+    const summary = await runCommand(s, "show interface summary", 2000);
+    return { configOut, writeOut, runConfig, summary };
+  });
+
+  const vlans = parseVlans(result.runConfig, parseInterfaceSummary(result.summary));
+
+  return {
+    deleted: true,
+    device_id: dev.id,
+    vlan_id: vlanId,
+    name: vlanName,
+    config_output: result.configOut,
+    write_output: result.writeOut,
+    active_vlans: vlans,
+  };
+}
+
 export const CONFIGURE_ACTIONS = [
   "add_dhcp",
   "remove_dhcp",
@@ -334,6 +433,8 @@ export const CONFIGURE_ACTIONS = [
   "set_ntp",
   "add_dns_redirect",
   "remove_dns_redirect",
+  "create_vlan",
+  "delete_vlan",
 ] as const;
 
 export type ConfigureAction = (typeof CONFIGURE_ACTIONS)[number];
@@ -356,6 +457,13 @@ export interface ConfigureParams {
   ntp_server?: string;
   /** Optional firmware/package URL or filename for action=`update`. */
   url?: string;
+  vlan_id?: number;
+  parent?: string;
+  cidr?: string;
+  description?: string;
+  dhcp_server?: boolean;
+  dhcp_scope?: string;
+  dhcp_lease?: number;
 }
 
 type ConfigureHandler = (dev: DeviceConfig, p: ConfigureParams) => Promise<Record<string, unknown>>;
@@ -395,6 +503,24 @@ const configureHandlers: Record<string, ConfigureHandler> = {
   },
   remove_dns_redirect: (dev, p) =>
     configRemoveDnsRedirect(dev, requireParam(p.domain, "domain")),
+  create_vlan: (dev, p) => {
+    if (p.vlan_id === undefined) throw new Error("'vlan_id' required for create_vlan");
+    const parent = requireParam(p.parent, "parent");
+    const cidr = requireParam(p.cidr, "cidr");
+    return configCreateVlan(dev, {
+      vlanId: p.vlan_id,
+      parent,
+      cidr,
+      description: p.description,
+      dhcpServer: p.dhcp_server,
+      dhcpScope: p.dhcp_scope,
+      dhcpLease: p.dhcp_lease,
+    });
+  },
+  delete_vlan: (dev, p) => {
+    if (p.vlan_id === undefined) throw new Error("'vlan_id' required for delete_vlan");
+    return configDeleteVlan(dev, p.vlan_id);
+  },
 };
 
 /** Dispatch a configure action — shared by MCP and AXI. */

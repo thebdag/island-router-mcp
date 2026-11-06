@@ -105,7 +105,7 @@ When adding a new operation:
 
 ### Current Action Inventory
 
-**Query actions** (15 total):
+**Query actions** (17 total):
 
 | Action | Core handler (`src/core/`) | Description |
 |---|---|---|
@@ -124,8 +124,10 @@ When adding a new operation:
 | `dns_redirects` | `queryDnsRedirects()` | DNS redirect rules (hostname → server) |
 | `command` | `queryCommand()` | Any allowlisted show command |
 | `ping` | `queryPing()` | ICMP ping from router |
+| `vlans` | `queryVlans()` | Parsed VLAN interfaces + operational status |
+| `subscribers` | `querySubscribers()` | Discovered network devices with IoT classification |
 
-**Configure actions** (13 total):
+**Configure actions** (15 total):
 
 | Action | Core handler (`src/core/`) | Description |
 |---|---|---|
@@ -142,6 +144,8 @@ When adding a new operation:
 | `set_ntp` | `configNtp()` | Set NTP server |
 | `add_dns_redirect` | `configAddDnsRedirect()` | Add DNS redirect / block hostname |
 | `remove_dns_redirect` | `configRemoveDnsRedirect()` | Remove DNS redirect for a domain |
+| `create_vlan` | `configCreateVlan()` | Create/configure VLAN interface (parent, CIDR, DHCP) |
+| `delete_vlan` | `configDeleteVlan()` | Delete VLAN interface (`no interface vlan<id>`) |
 
 ### AXI CLI command inventory
 
@@ -153,6 +157,8 @@ When adding a new operation:
 | `neighbors` / `routes` | Minimal fields + count |
 | `logs` / `config` / `config-diff` | Truncation + `--full` |
 | `vpns` / `dhcp` / `ntp` / `dns-redirects` | Structured lists |
+| `vlans` | List VLAN interfaces |
+| `subscribers` | Discovered devices + `--category iot` filter |
 | `ping` / `show` | Diagnostics / allowlisted show |
 | `configure` | Writes; requires `--confirm` |
 | `setup hooks` | Ambient SessionStart integration |

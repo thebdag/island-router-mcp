@@ -87,8 +87,8 @@ island-router-mcp/
 | --- | --- |
 | `island_list_devices` | Inventory, no SSH |
 | `island_actions` | Compact catalog or per-action schema (`action=<name>`), no SSH |
-| `island_query` | 15 read actions via `action` + `params` |
-| `island_configure` | 13 write actions; `params` + `confirmation_phrase=apply_change` |
+| `island_query` | 17 read actions via `action` + `params` (including `vlans` and `subscribers`) |
+| `island_configure` | 15 write actions; `params` + `confirmation_phrase=apply_change` |
 
 ### AXI CLI
 
