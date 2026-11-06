@@ -9,6 +9,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 ## [Unreleased]
 
 ### Added
+- **Google ADK Autonomous Workflows (`@google/adk`)** (`src/agents/`):
+  - Native ADK `FunctionTool` wrappers (`createIslandAdkTools`) over `src/core/` with `requireConfirmation: true` (Human-in-the-Loop interrupt gate) on `island_configure`
+  - Progressive `SkillToolset` loader (`createIslandSkillToolset`) exposing `.agent/skills/` reference docs to ADK agents
+  - **Fleet Auditor Workflow (`fleetAuditorAgent.ts`)**: deterministic config normalization, golden-baseline drift engine (`computeConfigDrift`), compliance evaluator (`evaluateDeviceCompliance`), and conditional ADK `Workflow` routing (`healthy` 0-LLM-token path vs. `needs_remediation` LLM planner)
+  - **Firmware Upgrade Workflow (`firmwareUpgradeAgent.ts`)**: pre-flight snapshot capture (`captureFirmwareSnapshot`), post-upgrade regression diffing (`diffFirmwareSnapshots`), and `enforcePreflightBeforeUpdateCallback` runtime guardrail blocking `action="update"` without a verified pre-flight snapshot
+  - CLI runner (`npm run agent` / `src/agents/cli.ts`) and offline trajectory unit tests (`test/agents.test.ts`)
 - **Firmware update actions** (official CLI 2.3.2):
   - `update` — `update [<url>]` checks for newer firmware and installs if found; optional URL/filename
   - `clear_update` — `clear update` stops a stuck/incomplete update
