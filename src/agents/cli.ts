@@ -8,6 +8,8 @@
  */
 
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   InMemoryRunner,
   LogLevel,
@@ -48,10 +50,11 @@ FLAGS
   --help, -h           Print this help message
 `;
 
-const DEMO_DEVICES: DeviceConfig[] = [
+/** RFC 5737 TEST-NET-1 / TEST-NET-2 demo devices for offline verification. */
+export const DEMO_DEVICES: DeviceConfig[] = [
   {
     id: "hq-router",
-    host: "192.168.2.1",
+    host: "192.0.2.10",
     port: 22,
     username: "admin",
     authMethod: "password",
@@ -59,7 +62,7 @@ const DEMO_DEVICES: DeviceConfig[] = [
   },
   {
     id: "branch-router",
-    host: "10.0.1.1",
+    host: "198.51.100.10",
     port: 22,
     username: "admin",
     authMethod: "key",
@@ -67,176 +70,210 @@ const DEMO_DEVICES: DeviceConfig[] = [
   },
 ];
 
-const DEMO_GOLDEN_BASELINES: Record<string, string> = {
+export const DEMO_GOLDEN_BASELINES: Record<string, string> = {
   "hq-router": [
     "hostname Island-HQ",
-    "syslog server 192.168.2.50:514",
+    "syslog server 192.0.2.50:514",
     "syslog level 5",
     "ntp pool.ntp.org",
   ].join("\n"),
   "branch-router": [
     "hostname Island-Branch",
-    "syslog server 192.168.2.50:514",
+    "syslog server 192.0.2.50:514",
     "syslog level 5",
     "ntp pool.ntp.org",
   ].join("\n"),
 };
 
-function createDemoQueryFn(simulateDrift: boolean) {
-  return async (dev: DeviceConfig, params: QueryParams): Promise<unknown> => {
-    const isBranchDrift = simulateDrift && dev.id === "branch-router";
-    switch (params.action) {
-      case "status":
-        return {
-          device_id: dev.id,
-          host: dev.host,
-          version: {
-            firmware: "2.3.2",
-            model: "Island Pro",
-            serialNumber: `ISL-${dev.id.toUpperCase()}`,
-            uptime: "47 days, 3 hours",
-            buildDate: "2026-01-15",
-            hostname: dev.id,
-            raw: "Island Router v2.3.2",
-          },
-          interfaces: [
-            {
-              name: "en0",
-              status: "up",
-              protocol: "up",
-              ipAddress: dev.host,
-              macAddress: "00:11:22:33:44:01",
-              speed: "1000Mb/s",
-              duplex: "full",
-              mtu: 1500,
-              description: "WAN",
-            },
-            {
-              name: "en1",
-              status: isBranchDrift ? "down" : "up",
-              protocol: isBranchDrift ? "down" : "up",
-              ipAddress: "10.10.0.1",
-              macAddress: "00:11:22:33:44:02",
-              speed: "1000Mb/s",
-              duplex: "full",
-              mtu: 1500,
-              description: "LAN",
-            },
-          ],
-          routes: [
-            {
-              destination: "0.0.0.0",
-              mask: "0.0.0.0",
-              gateway: "192.0.2.1",
-              interface: "en0",
-              metric: 1,
-              type: "static",
-            },
-          ],
-          neighbors: [
-            {
-              ip: "10.10.0.25",
-              mac: "aa:bb:cc:dd:ee:01",
-              interface: "en1",
-              state: "REACHABLE",
-            },
-          ],
-        };
-      case "logs":
-        return {
-          device_id: dev.id,
-          count: 0,
-          syslog_config: isBranchDrift
-            ? {
-                enabled: false,
-                server: null,
-                port: null,
-                level: null,
-                protocol: null,
-              }
-            : {
-                enabled: true,
-                server: "192.168.2.50",
-                port: 514,
-                level: "5",
-                protocol: "udp",
-              },
-          entries: [],
-        };
-      case "ntp":
-        return {
-          device_id: dev.id,
-          ntp_config: {
-            servers: ["pool.ntp.org"],
-            enabled: true,
-            raw: "ntp pool.ntp.org",
-          },
-          status: {
-            synchronized: true,
-            stratum: 2,
-            referenceId: "162.159.200.1",
-            systemTime: "",
-            offset: 0,
-            jitter: 0,
-            raw: "Synchronized",
-          },
-          associations: [],
-        };
-      case "vpns":
-        return {
-          device_id: dev.id,
-          vpn: {
-            interfaceName: "wg0",
-            publicKey: "demo-pub-key",
-            listeningPort: 51820,
-            peers: [
-              {
-                id: "peer-1",
-                name: "site-to-site",
-                endpoint: "198.51.100.10:51820",
-                localIp: "10.255.0.1",
-                remoteIp: "10.255.0.2",
-                status: "active",
-                txBytes: 850_000_000,
-                rxBytes: 1_200_000_000,
-                latestHandshake: "30 seconds ago",
-              },
-            ],
-          },
-        };
-      case "dhcp_reservations":
-        return {
-          device_id: dev.id,
-          count: 1,
-          reservations: [
-            {
-              mac: "aa:bb:cc:dd:ee:01",
-              ip: "10.10.0.25",
-              hostname: "nas-01",
-              interface: "en1",
-              status: "active",
-            },
-          ],
-        };
-      case "config":
-        return {
-          device_id: dev.id,
-          config: isBranchDrift
-            ? [
-                "# Generated 2026-11-05T21:00:00Z",
-                "hostname Island-Branch",
-                "ip dns redirect ads.example.com 0.0.0.0",
-                "ntp pool.ntp.org",
-              ].join("\n")
-            : [
-                "# Generated 2026-11-05T21:00:00Z",
-                DEMO_GOLDEN_BASELINES[dev.id] ?? "",
-              ].join("\n"),
-        };
-      default:
-        throw new Error(`Unsupported demo action: ${params.action}`);
-    }
+export interface DemoQueryOptions {
+  simulateDrift?: boolean;
+  driftAllDevices?: boolean;
+  dropVpnPeer?: boolean;
+}
+
+export function createDemoQueryFn(
+  optionsOrSimulateDrift: boolean | DemoQueryOptions = false,
+): (dev: DeviceConfig, params: QueryParams) => Promise<unknown> {
+  const opts: DemoQueryOptions =
+    typeof optionsOrSimulateDrift === "boolean"
+      ? { simulateDrift: optionsOrSimulateDrift }
+      : optionsOrSimulateDrift;
+
+  return (dev: DeviceConfig, params: QueryParams): Promise<unknown> => {
+    const isDrifted =
+      Boolean(opts.simulateDrift) &&
+      (Boolean(opts.driftAllDevices) || dev.id === "branch-router");
+
+    return Promise.resolve(
+      buildDemoActionResult(dev, params, isDrifted, Boolean(opts.dropVpnPeer)),
+    );
   };
+}
+
+function buildDemoActionResult(
+  dev: DeviceConfig,
+  params: QueryParams,
+  isDrifted: boolean,
+  dropVpnPeer: boolean,
+): unknown {
+  switch (params.action) {
+    case "status":
+      return {
+        device_id: dev.id,
+        host: dev.host,
+        version: {
+          firmware: "2.3.2",
+          model: "Island Pro",
+          serialNumber: `ISL-${dev.id.toUpperCase()}`,
+          uptime: "47 days, 3 hours",
+          buildDate: "2026-01-15",
+          hostname: dev.id,
+          raw: "Island Router v2.3.2",
+        },
+        interfaces: [
+          {
+            name: "en0",
+            status: "up",
+            protocol: "up",
+            ipAddress: dev.host,
+            macAddress: "00:11:22:33:44:01",
+            speed: "1000Mb/s",
+            duplex: "full",
+            mtu: 1500,
+            description: "WAN",
+          },
+          {
+            name: "en1",
+            status: isDrifted ? "down" : "up",
+            protocol: isDrifted ? "down" : "up",
+            ipAddress: "192.0.2.1",
+            macAddress: "00:11:22:33:44:02",
+            speed: "1000Mb/s",
+            duplex: "full",
+            mtu: 1500,
+            description: "LAN",
+          },
+        ],
+        routes: [
+          {
+            destination: "0.0.0.0",
+            mask: "0.0.0.0",
+            gateway: "192.0.2.1",
+            interface: "en0",
+            metric: 1,
+            type: "static",
+          },
+        ],
+        neighbors: [
+          {
+            ip: "192.0.2.25",
+            mac: "aa:bb:cc:dd:ee:01",
+            interface: "en1",
+            state: "REACHABLE",
+          },
+        ],
+      };
+    case "logs":
+      return {
+        device_id: dev.id,
+        count: 0,
+        syslog_config: isDrifted
+          ? {
+              enabled: false,
+              server: null,
+              port: null,
+              level: null,
+              protocol: null,
+            }
+          : {
+              enabled: true,
+              server: "192.0.2.50",
+              port: 514,
+              level: "5",
+              protocol: "udp",
+            },
+        entries: [],
+      };
+    case "ntp":
+      return {
+        device_id: dev.id,
+        ntp_config: {
+          servers: ["pool.ntp.org"],
+          enabled: true,
+          raw: "ntp pool.ntp.org",
+        },
+        status: {
+          synchronized: true,
+          stratum: 2,
+          referenceId: "198.51.100.1",
+          systemTime: "",
+          offset: 0,
+          jitter: 0,
+          raw: "Synchronized",
+        },
+        associations: [],
+      };
+    case "vpns":
+      return {
+        device_id: dev.id,
+        vpn: {
+          interfaceName: "wg0",
+          publicKey: "demo-pub-key",
+          listeningPort: 51820,
+          peers: dropVpnPeer
+            ? []
+            : [
+                {
+                  id: "peer-1",
+                  name: "site-to-site",
+                  endpoint: "198.51.100.10:51820",
+                  localIp: "198.51.100.1",
+                  remoteIp: "198.51.100.2",
+                  status: "active",
+                  txBytes: 850_000_000,
+                  rxBytes: 1_200_000_000,
+                  latestHandshake: "30 seconds ago",
+                },
+              ],
+        },
+      };
+    case "dhcp_reservations":
+      return {
+        device_id: dev.id,
+        count: 1,
+        reservations: [
+          {
+            mac: "aa:bb:cc:dd:ee:01",
+            ip: "192.0.2.25",
+            hostname: "nas-01",
+            interface: "en1",
+            status: "active",
+          },
+        ],
+      };
+    case "config":
+      return {
+        device_id: dev.id,
+        config: isDrifted
+          ? [
+              "# Generated 2026-11-05T21:00:00Z",
+              "hostname Island-Branch",
+              "ip dns redirect ads.example.com 0.0.0.0",
+              "ntp pool.ntp.org",
+            ].join("\n")
+          : [
+              "# Generated 2026-11-05T21:00:00Z",
+              DEMO_GOLDEN_BASELINES[dev.id] ?? "",
+            ].join("\n"),
+      };
+    case "ping":
+      return {
+        device_id: dev.id,
+        ping: { target: params.target, sent: 5, received: 5, lossPercent: 0 },
+      };
+    default:
+      throw new Error(`Unsupported demo action: ${params.action}`);
+  }
 }
 
 const VALID_FLAGS = new Set([
@@ -261,54 +298,80 @@ interface ParsedCliArgs {
   baselineFile?: string;
 }
 
+function splitFlagToken(arg: string): { flagName: string; inlineValue?: string } {
+  const eqIdx = arg.indexOf("=");
+  const flagName = eqIdx === -1 ? arg : arg.slice(0, eqIdx);
+  if (!VALID_FLAGS.has(flagName)) {
+    throw new Error(
+      `Unknown flag '${flagName}'. Valid flags: ${[...VALID_FLAGS].join(", ")}`,
+    );
+  }
+  return {
+    flagName,
+    inlineValue: eqIdx === -1 ? undefined : arg.slice(eqIdx + 1),
+  };
+}
+
+function readRequiredFlagValue(
+  flagName: string,
+  inlineValue: string | undefined,
+  nextToken: string | undefined,
+): { value: string; consumedNext: boolean } {
+  const value = inlineValue ?? nextToken;
+  if (!value || value.startsWith("-")) {
+    throw new Error(`Flag '${flagName}' requires a value`);
+  }
+  return { value, consumedNext: inlineValue === undefined };
+}
+
+function applyParsedFlag(
+  state: ParsedCliArgs,
+  flagName: string,
+  value?: string,
+): void {
+  if (flagName === "--help" || flagName === "-h") state.help = true;
+  if (flagName === "--live") state.live = true;
+  if (flagName === "--demo-drift") state.demoDrift = true;
+  if (flagName === "--demo-healthy") state.demoDrift = false;
+  if (flagName === "--device") state.deviceId = value;
+  if (flagName === "--baseline-file") state.baselineFile = value;
+}
+
 function parseCliArgs(argv: string[]): ParsedCliArgs {
-  let subcommand = "fleet-audit";
-  let help = false;
-  let live = false;
-  let demoDrift = false;
-  let deviceId: string | undefined;
-  let baselineFile: string | undefined;
+  const state: ParsedCliArgs = {
+    subcommand: "fleet-audit",
+    help: false,
+    live: false,
+    demoDrift: false,
+  };
   let subcommandSeen = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
-    if (arg === "--help" || arg === "-h") {
-      help = true;
-      continue;
-    }
     if (!arg.startsWith("-")) {
-      if (!subcommandSeen) {
-        subcommand = arg;
-        subcommandSeen = true;
-        continue;
+      if (subcommandSeen) {
+        throw new Error(`Unexpected positional argument: '${arg}'`);
       }
-      throw new Error(`Unexpected positional argument: '${arg}'`);
-    }
-
-    const eqIdx = arg.indexOf("=");
-    const flagName = eqIdx === -1 ? arg : arg.slice(0, eqIdx);
-    if (!VALID_FLAGS.has(flagName)) {
-      throw new Error(
-        `Unknown flag '${flagName}'. Valid flags: ${[...VALID_FLAGS].join(", ")}`,
-      );
-    }
-
-    if (VALUE_FLAGS.has(flagName)) {
-      const val = eqIdx === -1 ? argv[++i] : arg.slice(eqIdx + 1);
-      if (!val || val.startsWith("-")) {
-        throw new Error(`Flag '${flagName}' requires a value`);
-      }
-      if (flagName === "--device") deviceId = val;
-      if (flagName === "--baseline-file") baselineFile = val;
+      state.subcommand = arg;
+      subcommandSeen = true;
       continue;
     }
 
-    if (flagName === "--live") live = true;
-    if (flagName === "--demo-drift") demoDrift = true;
-    if (flagName === "--demo-healthy") demoDrift = false;
+    const { flagName, inlineValue } = splitFlagToken(arg);
+    if (VALUE_FLAGS.has(flagName)) {
+      const { value, consumedNext } = readRequiredFlagValue(
+        flagName,
+        inlineValue,
+        argv[i + 1],
+      );
+      if (consumedNext) i += 1;
+      applyParsedFlag(state, flagName, value);
+    } else {
+      applyParsedFlag(state, flagName);
+    }
   }
 
-  return { subcommand, help, live, demoDrift, deviceId, baselineFile };
+  return state;
 }
 
 /** Collect events from an ADK workflow run and format a single root JSON payload. */
@@ -371,6 +434,67 @@ function collectEventDetails(
   }
 }
 
+async function runFleetAuditSubcommand(
+  parsed: ParsedCliArgs,
+): Promise<Record<string, unknown>> {
+  let goldenBaselines: Record<string, string> | undefined = parsed.live
+    ? undefined
+    : DEMO_GOLDEN_BASELINES;
+
+  if (parsed.baselineFile) {
+    const safePath = resolveLocalPath(parsed.baselineFile, "baseline file");
+    const content = fs.readFileSync(safePath, "utf8");
+    const targetId = parsed.deviceId ?? "hq-router";
+    goldenBaselines = { [targetId]: content };
+  }
+
+  const policy: FleetCompliancePolicy = { goldenBaselines };
+  const workflow = createFleetAuditWorkflow({
+    loadDevicesFn: parsed.live ? undefined : () => DEMO_DEVICES,
+    queryFn: parsed.live ? undefined : createDemoQueryFn(parsed.demoDrift),
+    policy,
+  });
+
+  const runner = new InMemoryRunner({
+    agent: workflow,
+    appName: "island-adk-prototype",
+  });
+
+  return collectWorkflowRunResult(
+    runner,
+    "Run fleet compliance and drift audit",
+  );
+}
+
+async function runFirmwarePreflightSubcommand(
+  parsed: ParsedCliArgs,
+): Promise<Record<string, unknown>> {
+  const workflow = createFirmwareUpgradeWorkflow({
+    deviceId: parsed.deviceId,
+    loadDevicesFn: parsed.live ? undefined : () => DEMO_DEVICES,
+    queryFn: parsed.live ? undefined : createDemoQueryFn(false),
+  });
+  const runner = new InMemoryRunner({
+    agent: workflow,
+    appName: "island-adk-prototype",
+  });
+
+  const payload = await collectWorkflowRunResult(
+    runner,
+    "Capture preflight snapshot and generate upgrade runbook",
+  );
+  const snapshot = payload["preflight_snapshot"] as
+    | FirmwareDeviceSnapshot
+    | undefined;
+  if (!parsed.live && snapshot) {
+    payload["sample_post_verify"] = diffFirmwareSnapshots(snapshot, {
+      ...snapshot,
+      version: { ...snapshot.version, firmware: "2.4.0" },
+    });
+  }
+  return payload;
+}
+
 async function main(): Promise<void> {
   // Keep stdout clean of ADK's experimental class notices.
   setLogLevel(LogLevel.ERROR);
@@ -391,61 +515,13 @@ async function main(): Promise<void> {
   }
 
   if (parsed.subcommand === "fleet-audit") {
-    let goldenBaselines: Record<string, string> | undefined = parsed.live
-      ? undefined
-      : DEMO_GOLDEN_BASELINES;
-
-    if (parsed.baselineFile) {
-      const safePath = resolveLocalPath(parsed.baselineFile, "baseline file");
-      const content = fs.readFileSync(safePath, "utf8");
-      const targetId = parsed.deviceId ?? "hq-router";
-      goldenBaselines = { [targetId]: content };
-    }
-
-    const policy: FleetCompliancePolicy = { goldenBaselines };
-    const workflow = createFleetAuditWorkflow({
-      loadDevicesFn: parsed.live ? undefined : () => DEMO_DEVICES,
-      queryFn: parsed.live ? undefined : createDemoQueryFn(parsed.demoDrift),
-      policy,
-    });
-
-    const runner = new InMemoryRunner({
-      agent: workflow,
-      appName: "island-adk-prototype",
-    });
-
-    const payload = await collectWorkflowRunResult(
-      runner,
-      "Run fleet compliance and drift audit",
-    );
+    const payload = await runFleetAuditSubcommand(parsed);
     process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     return;
   }
 
   if (parsed.subcommand === "firmware-preflight") {
-    const workflow = createFirmwareUpgradeWorkflow({
-      deviceId: parsed.deviceId,
-      loadDevicesFn: parsed.live ? undefined : () => DEMO_DEVICES,
-      queryFn: parsed.live ? undefined : createDemoQueryFn(false),
-    });
-    const runner = new InMemoryRunner({
-      agent: workflow,
-      appName: "island-adk-prototype",
-    });
-
-    const payload = await collectWorkflowRunResult(
-      runner,
-      "Capture preflight snapshot and generate upgrade runbook",
-    );
-    const snapshot = payload["preflight_snapshot"] as
-      | FirmwareDeviceSnapshot
-      | undefined;
-    if (!parsed.live && snapshot) {
-      payload["sample_post_verify"] = diffFirmwareSnapshots(snapshot, {
-        ...snapshot,
-        version: { ...snapshot.version, firmware: "2.4.0" },
-      });
-    }
+    const payload = await runFirmwarePreflightSubcommand(parsed);
     process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     return;
   }
@@ -456,4 +532,10 @@ async function main(): Promise<void> {
   process.exitCode = 2;
 }
 
-await main();
+const isEntrypoint =
+  process.argv[1] !== undefined &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (isEntrypoint) {
+  await main();
+}

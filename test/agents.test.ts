@@ -3,11 +3,17 @@ import {
   BaseLlm,
   InMemoryRunner,
   isFunctionTool,
+  type BaseAgent,
   type BaseLlmConnection,
   type Context,
   type LlmRequest,
   type LlmResponse,
 } from "@google/adk";
+import {
+  DEMO_DEVICES,
+  DEMO_GOLDEN_BASELINES,
+  createDemoQueryFn,
+} from "../src/agents/cli.js";
 import {
   captureFirmwareSnapshot,
   computeConfigDrift,
@@ -23,7 +29,6 @@ import {
   ACTION_CATALOG,
   QUERY_ACTIONS,
   type ConfigureParams,
-  type QueryParams,
 } from "../src/core/index.js";
 import type { DeviceConfig } from "../src/islandSsh.js";
 
@@ -36,7 +41,9 @@ class MockLlm extends BaseLlm {
     this.replyText = replyText;
   }
 
-  async *generateContentAsync(_llmRequest: LlmRequest): AsyncGenerator<LlmResponse, void> {
+  async *generateContentAsync(
+    _llmRequest: LlmRequest,
+  ): AsyncGenerator<LlmResponse, void> {
     this.callCount += 1;
     yield {
       content: {
@@ -51,163 +58,29 @@ class MockLlm extends BaseLlm {
   }
 }
 
-const TEST_DEVICES: DeviceConfig[] = [
-  {
-    id: "hq-router",
-    host: "192.168.2.1",
-    port: 22,
-    username: "admin",
-    authMethod: "password",
-    description: "HQ Router",
-  },
-];
+const TEST_DEVICES: DeviceConfig[] = [DEMO_DEVICES[0]!];
 
-function createMockQueryFn(options: { drift?: boolean; dropVpnPeer?: boolean } = {}) {
-  return async (dev: DeviceConfig, params: QueryParams): Promise<unknown> => {
-    switch (params.action) {
-      case "status":
-        return {
-          device_id: dev.id,
-          host: dev.host,
-          version: {
-            firmware: "2.3.2",
-            model: "IX2400",
-            serialNumber: "ISL-001",
-            uptime: "10 days",
-            buildDate: "2026-01-15",
-            hostname: "Island-HQ",
-            raw: "v2.3.2",
-          },
-          interfaces: [
-            {
-              name: "en0",
-              status: "up",
-              protocol: "up",
-              ipAddress: "192.168.2.1",
-              macAddress: "00:11:22:33:44:55",
-              speed: "1000Mb/s",
-              duplex: "full",
-              mtu: 1500,
-              description: "WAN",
-            },
-            {
-              name: "en1",
-              status: options.drift ? "down" : "up",
-              protocol: options.drift ? "down" : "up",
-              ipAddress: "10.0.0.1",
-              macAddress: "00:11:22:33:44:56",
-              speed: "1000Mb/s",
-              duplex: "full",
-              mtu: 1500,
-              description: "LAN",
-            },
-          ],
-          routes: [
-            {
-              destination: "0.0.0.0",
-              mask: "0.0.0.0",
-              gateway: "192.0.2.1",
-              interface: "en0",
-              metric: 1,
-              type: "static",
-            },
-          ],
-          neighbors: [
-            {
-              ip: "10.0.0.10",
-              mac: "aa:bb:cc:dd:ee:ff",
-              interface: "en1",
-              state: "REACHABLE",
-            },
-          ],
-        };
-      case "logs":
-        return {
-          device_id: dev.id,
-          count: 0,
-          syslog_config: {
-            enabled: !options.drift,
-            server: options.drift ? null : "192.168.2.50",
-            port: 514,
-            level: "5",
-            protocol: "udp",
-          },
-          entries: [],
-        };
-      case "ntp":
-        return {
-          device_id: dev.id,
-          ntp_config: {
-            servers: ["pool.ntp.org"],
-            enabled: true,
-            raw: "ntp pool.ntp.org",
-          },
-          status: {
-            synchronized: true,
-            stratum: 2,
-            referenceId: "162.159.200.1",
-            systemTime: "",
-            offset: 0,
-            jitter: 0,
-            raw: "synchronized",
-          },
-          associations: [],
-        };
-      case "vpns":
-        return {
-          device_id: dev.id,
-          // Matches exact VpnSummary return shape of parseVpnPeers() in src/parsers/vpn.ts
-          vpn: {
-            interfaceName: "wg0",
-            publicKey: "abc-pub-key",
-            listeningPort: 51820,
-            peers: options.dropVpnPeer
-              ? []
-              : [
-                  {
-                    id: "peer1",
-                    name: "site-to-site",
-                    endpoint: "198.51.100.1:51820",
-                    localIp: "10.1.0.1",
-                    remoteIp: "10.1.0.2",
-                    status: "up",
-                    rxBytes: 1000,
-                    txBytes: 1000,
-                    latestHandshake: "10s ago",
-                  },
-                ],
-          },
-        };
-      case "dhcp_reservations":
-        return {
-          device_id: dev.id,
-          count: 1,
-          reservations: [
-            {
-              mac: "aa:bb:cc:dd:ee:ff",
-              ip: "10.0.0.10",
-              hostname: "nas",
-              interface: "en1",
-              status: "active",
-            },
-          ],
-        };
-      case "config":
-        return {
-          device_id: dev.id,
-          config: options.drift
-            ? "# Generated today\nhostname Island-HQ\nip dns redirect rogue.example 0.0.0.0\n"
-            : "# Generated today\nhostname Island-HQ\nsyslog server 192.168.2.50:514\nsyslog level 5\nntp pool.ntp.org\n",
-        };
-      case "ping":
-        return {
-          device_id: dev.id,
-          ping: { target: params.target, sent: 5, received: 5, lossPercent: 0 },
-        };
-      default:
-        throw new Error(`Unexpected action in test: ${params.action}`);
+async function runWorkflowEvents(
+  workflow: BaseAgent,
+  prompt: string,
+): Promise<{ outputs: unknown[]; textReplies: string[] }> {
+  const runner = new InMemoryRunner({ agent: workflow });
+  const outputs: unknown[] = [];
+  const textReplies: string[] = [];
+
+  for await (const event of runner.runEphemeral({
+    userId: "test-operator",
+    newMessage: { parts: [{ text: prompt }] },
+  })) {
+    if (event.output !== undefined) {
+      outputs.push(event.output);
     }
-  };
+    for (const part of event.content?.parts ?? []) {
+      if (part.text) textReplies.push(part.text);
+    }
+  }
+
+  return { outputs, textReplies };
 }
 
 describe("Core & ADK Surface Integration", () => {
@@ -222,7 +95,7 @@ describe("Core & ADK Surface Integration", () => {
   it("exposes the 4 progressive Island Router tools and enforces HITL confirmation on writes", async () => {
     const tools = createIslandAdkTools({
       loadDevicesFn: () => TEST_DEVICES,
-      queryFn: createMockQueryFn(),
+      queryFn: createDemoQueryFn(),
       configureFn: async (dev: DeviceConfig, params: ConfigureParams) => ({
         configured: true,
         device_id: dev.id,
@@ -254,7 +127,7 @@ describe("Core & ADK Surface Integration", () => {
       const needsConfirmation = await queryTool.checkRequireConfirmation({
         device_id: "hq-router",
         action: "ping",
-        params: { target: "1.1.1.1" },
+        params: { target: "198.51.100.1" },
       });
       expect(needsConfirmation).toBe(false);
     }
@@ -281,9 +154,9 @@ describe("Fleet Auditor Engine & ADK Workflow", () => {
       "  shutdown",
       "end",
       "interface en1",
-      "  ip address 10.0.0.1/24",
+      "  ip address 192.0.2.1/24",
       "end",
-      "syslog server 192.168.2.50:514",
+      "syslog server 192.0.2.50:514",
     ].join("\n");
     const running = [
       "# Generated 2026-11-05",
@@ -293,7 +166,7 @@ describe("Fleet Auditor Engine & ADK Workflow", () => {
       "  shutdown",
       "end",
       "interface en1",
-      "  ip address 10.0.0.1/24",
+      "  ip address 192.0.2.1/24",
       "  shutdown",
       "end",
       "ip dns redirect ad.example.com 0.0.0.0",
@@ -304,8 +177,8 @@ describe("Fleet Auditor Engine & ADK Workflow", () => {
       "interface en0",
       "[interface en0] shutdown",
       "interface en1",
-      "[interface en1] ip address 10.0.0.1/24",
-      "syslog server 192.168.2.50:514",
+      "[interface en1] ip address 192.0.2.1/24",
+      "syslog server 192.0.2.50:514",
     ]);
 
     const drift = computeConfigDrift(running, baseline);
@@ -314,39 +187,28 @@ describe("Fleet Auditor Engine & ADK Workflow", () => {
       "[interface en1] shutdown",
       "ip dns redirect ad.example.com 0.0.0.0",
     ]);
-    expect(drift.removed).toEqual(["syslog server 192.168.2.50:514"]);
+    expect(drift.removed).toEqual(["syslog server 192.0.2.50:514"]);
   });
 
   it("routes healthy fleets to the zero-LLM-token summary node", async () => {
     const mockLlm = new MockLlm("Should not be called when fleet is healthy");
     const workflow = createFleetAuditWorkflow({
       loadDevicesFn: () => TEST_DEVICES,
-      queryFn: createMockQueryFn({ drift: false }),
+      queryFn: createDemoQueryFn({ simulateDrift: false }),
       model: mockLlm,
       policy: {
-        goldenBaselines: {
-          "hq-router":
-            "hostname Island-HQ\nsyslog server 192.168.2.50:514\nsyslog level 5\nntp pool.ntp.org",
-        },
+        goldenBaselines: DEMO_GOLDEN_BASELINES,
       },
     });
 
-    const runner = new InMemoryRunner({ agent: workflow });
-    const outputs: unknown[] = [];
-
-    for await (const event of runner.runEphemeral({
-      userId: "test-operator",
-      newMessage: { parts: [{ text: "Audit fleet" }] },
-    })) {
-      if (event.output !== undefined) {
-        outputs.push(event.output);
-      }
-    }
+    const { outputs } = await runWorkflowEvents(workflow, "Audit fleet");
 
     expect(mockLlm.callCount).toBe(0);
     const finalSummary = outputs.at(-1) as { status: string; summary: string };
     expect(finalSummary.status).toBe("healthy");
-    expect(finalSummary.summary).toContain("passed compliance and drift checks");
+    expect(finalSummary.summary).toContain(
+      "passed compliance and drift checks",
+    );
   });
 
   it("routes non-compliant fleets to deterministic remediation when no Gemini API key is configured", async () => {
@@ -362,26 +224,19 @@ describe("Fleet Auditor Engine & ADK Workflow", () => {
     try {
       const workflow = createFleetAuditWorkflow({
         loadDevicesFn: () => TEST_DEVICES,
-        queryFn: createMockQueryFn({ drift: true }),
+        queryFn: createDemoQueryFn({
+          simulateDrift: true,
+          driftAllDevices: true,
+        }),
         policy: {
-          goldenBaselines: {
-            "hq-router":
-              "hostname Island-HQ\nsyslog server 192.168.2.50:514\nsyslog level 5\nntp pool.ntp.org",
-          },
+          goldenBaselines: DEMO_GOLDEN_BASELINES,
         },
       });
 
-      const runner = new InMemoryRunner({ agent: workflow });
-      const outputs: unknown[] = [];
-
-      for await (const event of runner.runEphemeral({
-        userId: "test-operator",
-        newMessage: { parts: [{ text: "Audit fleet without API key" }] },
-      })) {
-        if (event.output !== undefined) {
-          outputs.push(event.output);
-        }
-      }
+      const { outputs } = await runWorkflowEvents(
+        workflow,
+        "Audit fleet without API key",
+      );
 
       const finalOutput = outputs.at(-1) as {
         status: string;
@@ -406,31 +261,24 @@ describe("Fleet Auditor Engine & ADK Workflow", () => {
 
   it("routes non-compliant/drifted fleets to the LLM remediation planner when model is provided", async () => {
     const mockLlm = new MockLlm(
-      "Remediation Plan: configure syslog server 192.168.2.50 level 5 and inspect interface en1.",
+      "Remediation Plan: configure syslog server 192.0.2.50 level 5 and inspect interface en1.",
     );
     const workflow = createFleetAuditWorkflow({
       loadDevicesFn: () => TEST_DEVICES,
-      queryFn: createMockQueryFn({ drift: true }),
+      queryFn: createDemoQueryFn({
+        simulateDrift: true,
+        driftAllDevices: true,
+      }),
       model: mockLlm,
       policy: {
-        goldenBaselines: {
-          "hq-router":
-            "hostname Island-HQ\nsyslog server 192.168.2.50:514\nsyslog level 5\nntp pool.ntp.org",
-        },
+        goldenBaselines: DEMO_GOLDEN_BASELINES,
       },
     });
 
-    const runner = new InMemoryRunner({ agent: workflow });
-    const textReplies: string[] = [];
-
-    for await (const event of runner.runEphemeral({
-      userId: "test-operator",
-      newMessage: { parts: [{ text: "Audit fleet and plan remediation" }] },
-    })) {
-      for (const part of event.content?.parts ?? []) {
-        if (part.text) textReplies.push(part.text);
-      }
-    }
+    const { textReplies } = await runWorkflowEvents(
+      workflow,
+      "Audit fleet and plan remediation",
+    );
 
     expect(mockLlm.callCount).toBe(1);
     expect(textReplies.join("\n")).toContain("Remediation Plan");
@@ -441,13 +289,17 @@ describe("Firmware Upgrade ADK Workflow & Pre-flight Guardrails", () => {
   it("captures snapshots with real VpnSummary shape and flags interface + VPN peer regressions", async () => {
     const pre = await captureFirmwareSnapshot(
       TEST_DEVICES[0]!,
-      createMockQueryFn({ drift: false, dropVpnPeer: false }),
+      createDemoQueryFn({ simulateDrift: false, dropVpnPeer: false }),
     );
     expect(pre.vpn_peers).toHaveLength(1);
 
     const postWithRegression = await captureFirmwareSnapshot(
       TEST_DEVICES[0]!,
-      createMockQueryFn({ drift: true, dropVpnPeer: true }),
+      createDemoQueryFn({
+        simulateDrift: true,
+        driftAllDevices: true,
+        dropVpnPeer: true,
+      }),
     );
     expect(postWithRegression.vpn_peers).toHaveLength(0);
 
@@ -507,21 +359,14 @@ describe("Firmware Upgrade ADK Workflow & Pre-flight Guardrails", () => {
     );
     const workflow = createFirmwareUpgradeWorkflow({
       loadDevicesFn: () => TEST_DEVICES,
-      queryFn: createMockQueryFn({ drift: false }),
+      queryFn: createDemoQueryFn({ simulateDrift: false }),
       model: mockLlm,
     });
 
-    const runner = new InMemoryRunner({ agent: workflow });
-    const textReplies: string[] = [];
-
-    for await (const event of runner.runEphemeral({
-      userId: "test-operator",
-      newMessage: { parts: [{ text: "Generate firmware upgrade runbook for hq-router" }] },
-    })) {
-      for (const part of event.content?.parts ?? []) {
-        if (part.text) textReplies.push(part.text);
-      }
-    }
+    const { textReplies } = await runWorkflowEvents(
+      workflow,
+      "Generate firmware upgrade runbook for hq-router",
+    );
 
     expect(mockLlm.callCount).toBe(1);
     expect(textReplies.join("\n")).toContain("Upgrade Runbook");

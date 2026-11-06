@@ -48,8 +48,7 @@ export interface AgentToolDependencies {
 
 /**
  * True when an injected `BaseLlm` instance is provided or a Gemini/Google GenAI
- * API key is present in the environment. When false, workflows automatically
- * route to deterministic zero-token remediation/runbook nodes instead of throwing.
+ * API key is present in the environment.
  */
 export function hasLlmCredentials(model?: string | BaseLlm): boolean {
   if (model !== undefined && isBaseLlm(model)) {
@@ -77,7 +76,7 @@ export function createIslandAdkTools(deps: AgentToolDependencies = {}): BaseTool
     description:
       "List all configured Island Router devices from the inventory without opening SSH connections.",
     parameters: z.object({}),
-    execute: async () => {
+    execute: () => {
       const devices = getDevices().map((d) => ({
         id: d.id,
         host: d.host,
@@ -108,7 +107,7 @@ export function createIslandAdkTools(deps: AgentToolDependencies = {}): BaseTool
         .optional()
         .describe("Filter catalog by read-only ('query') or write ('configure')."),
     }),
-    execute: async ({ action, query, kind }) => {
+    execute: ({ action, query, kind }) => {
       if (action !== undefined) {
         try {
           return formatDescribe(describeAction(action));
@@ -173,8 +172,6 @@ export function createIslandAdkTools(deps: AgentToolDependencies = {}): BaseTool
         .optional()
         .describe("Action-specific configuration parameters."),
     }),
-    // Native ADK Human-in-the-Loop (HITL) gate: pauses LlmAgent execution
-    // and emits an `adk_request_confirmation` interrupt before mutating router state.
     requireConfirmation: true,
     execute: async ({ device_id, action, params }) => {
       const dev = getDeviceOrThrow(getDevices(), device_id);

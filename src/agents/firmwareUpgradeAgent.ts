@@ -1,17 +1,5 @@
 /**
  * ADK Firmware Upgrade Workflow — thin `@google/adk` graph adapter over `src/core/firmware.ts`.
- *
- * Enforces the upgrade state machine in code rather than prose:
- * 1. `preflight_snapshot` (`FunctionNode`): Captures full pre-upgrade router state
- *    (version, running-config, interfaces, routes, neighbors, VPNs, DHCP, NTP) and writes
- *    it to `ctx.state` ("preflight_snapshot").
- * 2. Conditional routing (`ctx.route`):
- *    - `"llm_planner"` (when LLM credentials/model exist) → `firmware_upgrade_planner` (`LlmAgent`)
- *      with BOTH `enforcePreflightBeforeUpdateCallback` and `requireConfirmation: true`.
- *    - `"deterministic_planner"` (when no Gemini API key is set) → `deterministic_firmware_planner`
- *      (`FunctionNode`, 0 LLM tokens, never crashes).
- * 3. `diffFirmwareSnapshots()`: Deterministic post-upgrade verification comparing
- *    pre-upgrade vs post-upgrade state.
  */
 
 import {
@@ -25,10 +13,8 @@ import {
 import {
   buildDeterministicUpgradeRunbook,
   captureFirmwareSnapshot,
-  diffFirmwareSnapshots,
   type DeterministicUpgradeRunbook,
   type FirmwareDeviceSnapshot,
-  type FirmwareSnapshotDiff,
 } from "../core/index.js";
 import { loadDevices, resolveDevice } from "../devices.js";
 import {
@@ -44,7 +30,7 @@ export {
   type DeterministicUpgradeRunbook,
   type FirmwareDeviceSnapshot,
   type FirmwareSnapshotDiff,
-};
+} from "../core/index.js";
 
 export interface FirmwareUpgradeWorkflowOptions extends AgentToolDependencies {
   deviceId?: string;

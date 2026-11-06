@@ -116,13 +116,21 @@ export interface FleetAuditReport {
   remediation_steps?: RemediationStep[];
 }
 
+function isSkippableConfigLine(trimmed: string): boolean {
+  if (trimmed.length === 0 || trimmed === "!" || trimmed === "#") {
+    return true;
+  }
+  return EPHEMERAL_CONFIG_PATTERNS.some((re) => re.test(trimmed));
+}
+
+function isUnindentedGlobalCommand(rawLine: string, trimmed: string): boolean {
+  const isUnindented = rawLine.length > 0 && !/^\s/.test(rawLine);
+  return isUnindented && GLOBAL_COMMAND_PREFIXES.some((re) => re.test(trimmed));
+}
+
 /**
  * Normalize an Island Router running-config while preserving `interface <name>`
  * context blocks (Island Router's 2-context CLI: Global + Interface).
- *
- * Sub-commands inside `interface <name> ... end` are prefixed with
- * `[interface <name>] ` so per-interface changes (e.g. `shutdown` moved from
- * `en0` to `en1` or added to a second interface) are always detected.
  */
 export function normalizeConfigLines(rawConfig: string): string[] {
   const normalized: string[] = [];
@@ -130,9 +138,7 @@ export function normalizeConfigLines(rawConfig: string): string[] {
 
   for (const rawLine of rawConfig.split(/\r?\n/)) {
     const trimmed = rawLine.trim();
-    if (trimmed.length === 0) continue;
-    if (EPHEMERAL_CONFIG_PATTERNS.some((re) => re.test(trimmed))) continue;
-    if (trimmed === "!" || trimmed === "#") continue;
+    if (isSkippableConfigLine(trimmed)) continue;
 
     const ifaceMatch = /^interface\s+(\S+)$/i.exec(trimmed);
     if (ifaceMatch) {
@@ -146,22 +152,39 @@ export function normalizeConfigLines(rawConfig: string): string[] {
       continue;
     }
 
-    const isUnindented = rawLine.length > 0 && !/^\s/.test(rawLine);
-    if (
-      currentInterface !== null &&
-      isUnindented &&
-      GLOBAL_COMMAND_PREFIXES.some((re) => re.test(trimmed))
-    ) {
+    if (currentInterface !== null && isUnindentedGlobalCommand(rawLine, trimmed)) {
       currentInterface = null;
     }
 
-    if (currentInterface !== null) {
-      normalized.push(`[interface ${currentInterface}] ${trimmed}`);
-    } else {
-      normalized.push(trimmed);
-    }
+    normalized.push(
+      currentInterface === null
+        ? trimmed
+        : `[interface ${currentInterface}] ${trimmed}`,
+    );
   }
   return normalized;
+}
+
+function buildLineCounts(lines: string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const line of lines) {
+    counts.set(line, (counts.get(line) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function diffLineCounts(
+  sourceCounts: Map<string, number>,
+  targetCounts: Map<string, number>,
+): string[] {
+  const delta: string[] = [];
+  for (const [line, count] of sourceCounts.entries()) {
+    const other = targetCounts.get(line) ?? 0;
+    for (let i = 0; i < count - other; i++) {
+      delta.push(line);
+    }
+  }
+  return delta;
 }
 
 /**
@@ -172,40 +195,69 @@ export function computeConfigDrift(
   runningConfig: string,
   baselineConfig: string,
 ): ConfigDriftResult {
-  const runningLines = normalizeConfigLines(runningConfig);
-  const baselineLines = normalizeConfigLines(baselineConfig);
+  const runningCounts = buildLineCounts(normalizeConfigLines(runningConfig));
+  const baselineCounts = buildLineCounts(normalizeConfigLines(baselineConfig));
 
-  const countMap = (lines: string[]): Map<string, number> => {
-    const counts = new Map<string, number>();
-    for (const line of lines) {
-      counts.set(line, (counts.get(line) ?? 0) + 1);
-    }
-    return counts;
-  };
-
-  const runningCounts = countMap(runningLines);
-  const baselineCounts = countMap(baselineLines);
-
-  const added: string[] = [];
-  for (const [line, count] of runningCounts.entries()) {
-    const baseCount = baselineCounts.get(line) ?? 0;
-    for (let i = 0; i < count - baseCount; i++) {
-      added.push(line);
-    }
-  }
-
-  const removed: string[] = [];
-  for (const [line, count] of baselineCounts.entries()) {
-    const runCount = runningCounts.get(line) ?? 0;
-    for (let i = 0; i < count - runCount; i++) {
-      removed.push(line);
-    }
-  }
+  const added = diffLineCounts(runningCounts, baselineCounts);
+  const removed = diffLineCounts(baselineCounts, runningCounts);
 
   return {
     drifted: added.length > 0 || removed.length > 0,
     added,
     removed,
+  };
+}
+
+function checkSyslogCompliance(
+  syslog: SyslogConfig,
+  minSyslogLevel: number,
+): DeviceComplianceCheck {
+  const hasServer = syslog.enabled && Boolean(syslog.server);
+  const parsedLevel =
+    syslog.level === null ? Number.NaN : Number.parseInt(String(syslog.level), 10);
+  const levelOk =
+    syslog.level === null ||
+    (!Number.isNaN(parsedLevel) && parsedLevel >= minSyslogLevel);
+  return {
+    name: "syslog_forwarding",
+    passed: hasServer && levelOk,
+    detail: hasServer
+      ? `Syslog server ${syslog.server} (level ${String(syslog.level ?? "default")})`
+      : "Syslog forwarding is not configured",
+  };
+}
+
+function checkNtpCompliance(
+  ntpConfig: NtpConfig,
+  ntpStatus: NtpStatus,
+  requireNtpSynced: boolean,
+): DeviceComplianceCheck {
+  const hasServers = ntpConfig.servers.length > 0;
+  const syncOk = !requireNtpSynced || ntpStatus.synchronized;
+  return {
+    name: "ntp_configuration",
+    passed: hasServers && syncOk,
+    detail: hasServers
+      ? `NTP servers: ${ntpConfig.servers.join(", ")} (synced=${String(ntpStatus.synchronized)})`
+      : "No NTP servers configured",
+  };
+}
+
+function checkInterfacesCompliance(
+  interfaces: InterfaceSummary[],
+  allowedDown: Set<string>,
+): DeviceComplianceCheck {
+  const unexpectedDown = interfaces.filter(
+    (iface) =>
+      iface.status.toLowerCase() !== "up" && !allowedDown.has(iface.name),
+  );
+  return {
+    name: "interfaces_up",
+    passed: unexpectedDown.length === 0,
+    detail:
+      unexpectedDown.length === 0
+        ? `All ${String(interfaces.length)} monitored interfaces up`
+        : `Interfaces down: ${unexpectedDown.map((i) => i.name).join(", ")}`,
   };
 }
 
@@ -216,62 +268,31 @@ export function evaluateDeviceCompliance(
   snapshot: DeviceAuditSnapshot,
   policy: FleetCompliancePolicy = {},
 ): DeviceAuditResult {
-  const requireSyslog = policy.requireSyslog ?? true;
-  const minSyslogLevel = policy.minSyslogLevel ?? 4;
-  const requireNtp = policy.requireNtp ?? true;
-  const requireNtpSynced = policy.requireNtpSynced ?? false;
-  const requireAllInterfacesUp = policy.requireAllInterfacesUp ?? true;
-  const allowedDown = new Set(policy.allowedDownInterfaces ?? []);
-
   const checks: DeviceComplianceCheck[] = [];
 
-  if (requireSyslog) {
-    const hasServer =
-      snapshot.syslog_config.enabled && Boolean(snapshot.syslog_config.server);
-    const parsedLevel =
-      snapshot.syslog_config.level === null
-        ? Number.NaN
-        : Number.parseInt(String(snapshot.syslog_config.level), 10);
-    const levelOk =
-      snapshot.syslog_config.level === null ||
-      (!Number.isNaN(parsedLevel) && parsedLevel >= minSyslogLevel);
-    checks.push({
-      name: "syslog_forwarding",
-      passed: hasServer && levelOk,
-      detail: hasServer
-        ? `Syslog server ${snapshot.syslog_config.server} (level ${String(snapshot.syslog_config.level ?? "default")})`
-        : "Syslog forwarding is not configured",
-    });
-  }
-
-  if (requireNtp) {
-    const hasServers = snapshot.ntp_config.servers.length > 0;
-    const syncOk = !requireNtpSynced || snapshot.ntp_status.synchronized;
-    checks.push({
-      name: "ntp_configuration",
-      passed: hasServers && syncOk,
-      detail: hasServers
-        ? `NTP servers: ${snapshot.ntp_config.servers.join(", ")} (synced=${String(snapshot.ntp_status.synchronized)})`
-        : "No NTP servers configured",
-    });
-  }
-
-  const upIfaces = snapshot.interfaces.filter(
-    (iface) => iface.status.toLowerCase() === "up",
-  );
-  if (requireAllInterfacesUp) {
-    const unexpectedDown = snapshot.interfaces.filter(
-      (iface) =>
-        iface.status.toLowerCase() !== "up" && !allowedDown.has(iface.name),
+  if (policy.requireSyslog ?? true) {
+    checks.push(
+      checkSyslogCompliance(snapshot.syslog_config, policy.minSyslogLevel ?? 4),
     );
-    checks.push({
-      name: "interfaces_up",
-      passed: unexpectedDown.length === 0,
-      detail:
-        unexpectedDown.length === 0
-          ? `All ${String(snapshot.interfaces.length)} monitored interfaces up`
-          : `Interfaces down: ${unexpectedDown.map((i) => i.name).join(", ")}`,
-    });
+  }
+
+  if (policy.requireNtp ?? true) {
+    checks.push(
+      checkNtpCompliance(
+        snapshot.ntp_config,
+        snapshot.ntp_status,
+        policy.requireNtpSynced ?? false,
+      ),
+    );
+  }
+
+  if (policy.requireAllInterfacesUp ?? true) {
+    checks.push(
+      checkInterfacesCompliance(
+        snapshot.interfaces,
+        new Set(policy.allowedDownInterfaces ?? []),
+      ),
+    );
   }
 
   const baseline = policy.goldenBaselines?.[snapshot.device_id];
@@ -290,6 +311,10 @@ export function evaluateDeviceCompliance(
     });
   }
 
+  const upIfaces = snapshot.interfaces.filter(
+    (iface) => iface.status.toLowerCase() === "up",
+  );
+
   return {
     device_id: snapshot.device_id,
     host: snapshot.host,
@@ -304,9 +329,50 @@ export function evaluateDeviceCompliance(
   };
 }
 
+function checkToRemediationStep(
+  deviceId: string,
+  check: DeviceComplianceCheck,
+): RemediationStep | null {
+  switch (check.name) {
+    case "syslog_forwarding":
+      return {
+        device_id: deviceId,
+        check: check.name,
+        summary: `Configure syslog forwarding on ${deviceId} (numeric level 0-7)`,
+        axi_command: `island-axi configure set-syslog --device ${deviceId} --server-ip <syslog-ip> --port 514 --level 5 --protocol udp --confirm`,
+        mcp_action: "island_configure (action='set_syslog')",
+      };
+    case "ntp_configuration":
+      return {
+        device_id: deviceId,
+        check: check.name,
+        summary: `Configure NTP server on ${deviceId}`,
+        axi_command: `island-axi configure set-ntp --device ${deviceId} --server pool.ntp.org --confirm`,
+        mcp_action: "island_configure (action='set_ntp')",
+      };
+    case "interfaces_up":
+      return {
+        device_id: deviceId,
+        check: check.name,
+        summary: `${check.detail} on ${deviceId}; inspect physical link or interface configuration`,
+        axi_command: `island-axi interfaces --device ${deviceId} --detail`,
+        mcp_action: "island_query (action='interfaces', params={ detail: true })",
+      };
+    case "golden_baseline_drift":
+      return {
+        device_id: deviceId,
+        check: check.name,
+        summary: `Reconcile running-config drift on ${deviceId} (${check.detail})`,
+        axi_command: `island-axi config-diff --device ${deviceId} --full`,
+        mcp_action: "island_query (action='config_diff')",
+      };
+    default:
+      return null;
+  }
+}
+
 /**
  * Generate a deterministic, zero-LLM-token remediation plan from a `FleetAuditReport`.
- * Used both by core `audit` queries and as the keyless fallback in the ADK workflow.
  */
 export function buildDeterministicRemediationPlan(
   report: FleetAuditReport,
@@ -316,46 +382,8 @@ export function buildDeterministicRemediationPlan(
     if (device.compliant) continue;
     for (const check of device.checks) {
       if (check.passed) continue;
-      switch (check.name) {
-        case "syslog_forwarding":
-          steps.push({
-            device_id: device.device_id,
-            check: check.name,
-            summary: `Configure syslog forwarding on ${device.device_id} (numeric level 0-7)`,
-            axi_command: `island-axi configure set-syslog --device ${device.device_id} --server-ip <syslog-ip> --port 514 --level 5 --protocol udp --confirm`,
-            mcp_action: "island_configure (action='set_syslog')",
-          });
-          break;
-        case "ntp_configuration":
-          steps.push({
-            device_id: device.device_id,
-            check: check.name,
-            summary: `Configure NTP server on ${device.device_id}`,
-            axi_command: `island-axi configure set-ntp --device ${device.device_id} --server pool.ntp.org --confirm`,
-            mcp_action: "island_configure (action='set_ntp')",
-          });
-          break;
-        case "interfaces_up":
-          steps.push({
-            device_id: device.device_id,
-            check: check.name,
-            summary: `${check.detail} on ${device.device_id}; inspect physical link or interface configuration`,
-            axi_command: `island-axi interfaces --device ${device.device_id} --detail`,
-            mcp_action: "island_query (action='interfaces', params={ detail: true })",
-          });
-          break;
-        case "golden_baseline_drift":
-          steps.push({
-            device_id: device.device_id,
-            check: check.name,
-            summary: `Reconcile running-config drift on ${device.device_id} (${check.detail})`,
-            axi_command: `island-axi config-diff --device ${device.device_id} --full`,
-            mcp_action: "island_query (action='config_diff')",
-          });
-          break;
-        default:
-          break;
-      }
+      const step = checkToRemediationStep(device.device_id, check);
+      if (step) steps.push(step);
     }
   }
   return steps;
@@ -390,13 +418,12 @@ export async function collectDeviceAuditSnapshot(
       ]),
     );
 
-    const vpnSummary = parseVpnPeers(raw["show vpns"] ?? "");
     return {
       device_id: dev.id,
       host: dev.host,
       version: parseVersion(raw["show version"] ?? ""),
       interfaces: parseInterfaceSummary(raw["show interface summary"] ?? ""),
-      vpn_peers: vpnSummary.peers,
+      vpn_peers: parseVpnPeers(raw["show vpns"] ?? "").peers,
       syslog_config: parseSyslogConfig(raw["show syslog"] ?? ""),
       ntp_config: parseNtpConfig(raw["show ntp"] ?? ""),
       ntp_status: parseNtpStatus(raw["show ntp status"] ?? ""),
@@ -404,36 +431,34 @@ export async function collectDeviceAuditSnapshot(
     };
   }
 
-  const [statusRaw, logsRaw, ntpRaw, vpnsRaw, configRaw] = await Promise.all([
-    queryFn(dev, { action: "status" }) as Promise<{
-      version: VersionInfo;
-      interfaces: InterfaceSummary[];
-    }>,
-    queryFn(dev, { action: "logs" }) as Promise<{
-      syslog_config: SyslogConfig;
-    }>,
-    queryFn(dev, { action: "ntp" }) as Promise<{
-      ntp_config: NtpConfig;
-      status: NtpStatus;
-    }>,
-    queryFn(dev, { action: "vpns" }) as Promise<{
-      vpn: VpnSummary | VpnPeer[];
-    }>,
-    queryFn(dev, { action: "config" }) as Promise<{
-      config: string;
-    }>,
-  ]);
+  const statusRes = (await queryFn(dev, { action: "status" })) as {
+    version: VersionInfo;
+    interfaces: InterfaceSummary[];
+  };
+  const logsRes = (await queryFn(dev, { action: "logs" })) as {
+    syslog_config: SyslogConfig;
+  };
+  const ntpRes = (await queryFn(dev, { action: "ntp" })) as {
+    ntp_config: NtpConfig;
+    status: NtpStatus;
+  };
+  const vpnsRes = (await queryFn(dev, { action: "vpns" })) as {
+    vpn: VpnSummary | VpnPeer[];
+  };
+  const configRes = (await queryFn(dev, { action: "config" })) as {
+    config: string;
+  };
 
   return {
     device_id: dev.id,
     host: dev.host,
-    version: statusRaw.version,
-    interfaces: statusRaw.interfaces,
-    vpn_peers: extractVpnPeers(vpnsRaw.vpn),
-    syslog_config: logsRaw.syslog_config,
-    ntp_config: ntpRaw.ntp_config,
-    ntp_status: ntpRaw.status,
-    running_config: configRaw.config,
+    version: statusRes.version,
+    interfaces: statusRes.interfaces,
+    vpn_peers: extractVpnPeers(vpnsRes.vpn),
+    syslog_config: logsRes.syslog_config,
+    ntp_config: ntpRes.ntp_config,
+    ntp_status: ntpRes.status,
+    running_config: configRes.config,
   };
 }
 

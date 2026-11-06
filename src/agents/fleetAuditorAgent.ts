@@ -1,13 +1,5 @@
 /**
  * ADK Fleet Auditor Workflow — thin `@google/adk` graph adapter over `src/core/fleet.ts`.
- *
- * Replaces prose instructions with a hybrid ADK graph (`Workflow`):
- * 1. `collect_fleet_audit` (`FunctionNode`): Deterministically polls all devices in inventory,
- *    normalizes & diffs running-config against golden baselines, and evaluates compliance policies.
- * 2. Conditional routing (`ctx.route`):
- *    - `"healthy"` → `healthy_fleet_summary` (`FunctionNode`, 0 LLM tokens).
- *    - `"needs_remediation"` (when LLM credentials/model exist) → `fleet_remediation_planner` (`LlmAgent`).
- *    - `"needs_remediation_deterministic"` (when no Gemini API key is set) → `deterministic_remediation_planner` (`FunctionNode`, 0 LLM tokens, never crashes).
  */
 
 import {
@@ -20,13 +12,8 @@ import {
 import {
   buildDeterministicRemediationPlan,
   collectDeviceAuditSnapshot,
-  computeConfigDrift,
   evaluateDeviceCompliance,
-  normalizeConfigLines,
-  type ConfigDriftResult,
   type DeviceAuditResult,
-  type DeviceAuditSnapshot,
-  type DeviceComplianceCheck,
   type FleetAuditReport,
   type FleetCompliancePolicy,
   type RemediationStep,
@@ -51,7 +38,7 @@ export {
   type FleetAuditReport,
   type FleetCompliancePolicy,
   type RemediationStep,
-};
+} from "../core/index.js";
 
 export interface FleetAuditWorkflowOptions extends AgentToolDependencies {
   policy?: FleetCompliancePolicy;
@@ -75,12 +62,12 @@ export function createCollectFleetAuditNode(
     "collect_fleet_audit",
     async (ctx: NodeContext): Promise<FleetAuditReport> => {
       const devices = getDevices();
-      const results: DeviceAuditResult[] = [];
-
-      for (const dev of devices) {
-        const snapshot = await collectDeviceAuditSnapshot(dev, queryFn);
-        results.push(evaluateDeviceCompliance(snapshot, policy));
-      }
+      const results: DeviceAuditResult[] = await Promise.all(
+        devices.map(async (dev) => {
+          const snapshot = await collectDeviceAuditSnapshot(dev, queryFn);
+          return evaluateDeviceCompliance(snapshot, policy);
+        }),
+      );
 
       const compliantCount = results.filter((r) => r.compliant).length;
       const nonCompliantCount = results.length - compliantCount;
