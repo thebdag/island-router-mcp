@@ -32,19 +32,30 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@google/adk": "^2.4.0",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "axi-sdk-js": "^0.1.13",
     "dotenv": "^17.4.0",
     "ssh2": "^1.15.0",
     "zod": "^4.6.7"
   },
+  "peerDependencies": {
+    "@google/adk": "^2.4.0"
+  },
+  "peerDependenciesMeta": {
+    "@google/adk": {
+      "optional": true
+    }
+  },
   "overrides": {
     "ajv": "^8.20.0",
+    "glob": "^14.0.4",
     "jose": "^6.2.5",
-    "raw-body": "^4.0.0"
+    "minimatch": "^11.0.5",
+    "raw-body": "^4.0.0",
+    "uuid": "^14.0.3"
   },
   "devDependencies": {
+    "@google/adk": "^2.4.0",
     "@types/dotenv": "^6.1.1",
     "@types/node": "^22.0.0",
     "@types/ssh2": "^1.15.0",

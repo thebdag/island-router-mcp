@@ -28,6 +28,7 @@ import { pingCommand } from "./commands/ping.js";
 import { showCommand } from "./commands/show.js";
 import { configureCommand } from "./commands/configure.js";
 import { setupCommand } from "./commands/setup.js";
+import { auditCommand, firmwareSnapshotCommand } from "./commands/audit.js";
 
 function readVersion(): string {
   try {
@@ -62,6 +63,8 @@ await runAxiCli({
     "dns-redirects": (args, context) => dnsRedirectsCommand(args, context),
     ping: (args, context) => pingCommand(args, context),
     show: (args, context) => showCommand(args, context),
+    audit: (args, context) => auditCommand(args, context),
+    "firmware-snapshot": (args, context) => firmwareSnapshotCommand(args, context),
     configure: (args, context) => configureCommand(args, context),
     setup: (args) => setupCommand(args),
   },

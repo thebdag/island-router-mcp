@@ -45,10 +45,10 @@ Use island-axi for Island Router read/write: inventory, status, interfaces, ARP 
 ## Commands
 
 ```
-commands[16]:
+commands[18]:
   (none)=devices dashboard, devices, status, interfaces, neighbors, routes,
   logs, config, config-diff, vpns, dhcp, ntp, dns-redirects, ping, show,
-  configure, setup
+  audit, firmware-snapshot, configure, setup
 ```
 
 ## Tips

@@ -13,8 +13,13 @@ import { parseVpnPeers } from "../parsers/vpn.js";
 import { parseNtpAssociations, parseNtpConfig, parseNtpStatus } from "../parsers/ntp.js";
 import { parsePing, parseSpeedtest, parseVersion } from "../parsers/system.js";
 import { parseDnsRedirects } from "../parsers/dnsRedirects.js";
+import { queryFirmwareSnapshot } from "./firmware.js";
+import { queryAudit } from "./fleet.js";
 import { withSession } from "./session.js";
 import { validateSafe } from "./validate.js";
+
+export { queryAudit } from "./fleet.js";
+export { queryFirmwareSnapshot } from "./firmware.js";
 
 export async function queryStatus(dev: DeviceConfig) {
   const commands = [
@@ -169,6 +174,8 @@ export const QUERY_ACTIONS = [
   "dns_redirects",
   "command",
   "ping",
+  "audit",
+  "firmware_snapshot",
 ] as const;
 
 export type QueryAction = (typeof QUERY_ACTIONS)[number];
@@ -179,6 +186,7 @@ export interface QueryParams {
   target?: string;
   detail?: boolean;
   time?: string;
+  baseline?: string;
 }
 
 /** Dispatch a read action by name. */
@@ -218,6 +226,10 @@ export async function dispatchQuery(dev: DeviceConfig, params: QueryParams) {
       if (!params.target) throw new Error("'target' parameter required for action='ping'");
       return queryPing(dev, params.target);
     }
+    case "audit":
+      return queryAudit(dev, params.baseline);
+    case "firmware_snapshot":
+      return queryFirmwareSnapshot(dev);
     default:
       throw new Error(`Unknown action: '${String(params.action)}'`);
   }

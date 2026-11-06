@@ -17,10 +17,14 @@ import {
   createIslandSkillToolset,
   diffFirmwareSnapshots,
   enforcePreflightBeforeUpdateCallback,
-  evaluateDeviceCompliance,
   normalizeConfigLines,
 } from "../src/agents/index.js";
-import type { ConfigureParams, QueryParams } from "../src/core/index.js";
+import {
+  ACTION_CATALOG,
+  QUERY_ACTIONS,
+  type ConfigureParams,
+  type QueryParams,
+} from "../src/core/index.js";
 import type { DeviceConfig } from "../src/islandSsh.js";
 
 class MockLlm extends BaseLlm {
@@ -58,7 +62,7 @@ const TEST_DEVICES: DeviceConfig[] = [
   },
 ];
 
-function createMockQueryFn(options: { drift?: boolean } = {}) {
+function createMockQueryFn(options: { drift?: boolean; dropVpnPeer?: boolean } = {}) {
   return async (dev: DeviceConfig, params: QueryParams): Promise<unknown> => {
     switch (params.action) {
       case "status":
@@ -152,18 +156,27 @@ function createMockQueryFn(options: { drift?: boolean } = {}) {
       case "vpns":
         return {
           device_id: dev.id,
-          vpn: [
-            {
-              name: "peer1",
-              publicKey: "abc",
-              endpoint: "198.51.100.1:51820",
-              allowedIps: ["10.1.0.0/16"],
-              latestHandshake: "10s ago",
-              rxBytes: 1000,
-              txBytes: 1000,
-              status: "up",
-            },
-          ],
+          // Matches exact VpnSummary return shape of parseVpnPeers() in src/parsers/vpn.ts
+          vpn: {
+            interfaceName: "wg0",
+            publicKey: "abc-pub-key",
+            listeningPort: 51820,
+            peers: options.dropVpnPeer
+              ? []
+              : [
+                  {
+                    id: "peer1",
+                    name: "site-to-site",
+                    endpoint: "198.51.100.1:51820",
+                    localIp: "10.1.0.1",
+                    remoteIp: "10.1.0.2",
+                    status: "up",
+                    rxBytes: 1000,
+                    txBytes: 1000,
+                    latestHandshake: "10s ago",
+                  },
+                ],
+          },
         };
       case "dhcp_reservations":
         return {
@@ -197,7 +210,15 @@ function createMockQueryFn(options: { drift?: boolean } = {}) {
   };
 }
 
-describe("ADK FunctionTools & SkillToolset", () => {
+describe("Core & ADK Surface Integration", () => {
+  it("exposes audit and firmware_snapshot in QUERY_ACTIONS and ACTION_CATALOG for MCP and AXI", () => {
+    expect(QUERY_ACTIONS).toContain("audit");
+    expect(QUERY_ACTIONS).toContain("firmware_snapshot");
+    const catalogNames = ACTION_CATALOG.map((s) => s.name);
+    expect(catalogNames).toContain("audit");
+    expect(catalogNames).toContain("firmware_snapshot");
+  });
+
   it("exposes the 4 progressive Island Router tools and enforces HITL confirmation on writes", async () => {
     const tools = createIslandAdkTools({
       loadDevicesFn: () => TEST_DEVICES,
@@ -250,29 +271,49 @@ describe("ADK FunctionTools & SkillToolset", () => {
   });
 });
 
-describe("Fleet Auditor ADK Workflow", () => {
-  it("normalizes config lines and detects golden baseline drift", () => {
+describe("Fleet Auditor Engine & ADK Workflow", () => {
+  it("normalizes config lines with interface context and detects per-interface drift", () => {
     const baseline = [
       "# Generated 2026-04-01",
       "! Last configuration change at 12:00",
       "hostname Island-HQ",
+      "interface en0",
+      "  shutdown",
+      "end",
+      "interface en1",
+      "  ip address 10.0.0.1/24",
+      "end",
       "syslog server 192.168.2.50:514",
     ].join("\n");
     const running = [
       "# Generated 2026-11-05",
       "ntp clock-period 17179869",
       "hostname Island-HQ",
+      "interface en0",
+      "  shutdown",
+      "end",
+      "interface en1",
+      "  ip address 10.0.0.1/24",
+      "  shutdown",
+      "end",
       "ip dns redirect ad.example.com 0.0.0.0",
     ].join("\n");
 
     expect(normalizeConfigLines(baseline)).toEqual([
       "hostname Island-HQ",
+      "interface en0",
+      "[interface en0] shutdown",
+      "interface en1",
+      "[interface en1] ip address 10.0.0.1/24",
       "syslog server 192.168.2.50:514",
     ]);
 
     const drift = computeConfigDrift(running, baseline);
     expect(drift.drifted).toBe(true);
-    expect(drift.added).toEqual(["ip dns redirect ad.example.com 0.0.0.0"]);
+    expect(drift.added).toEqual([
+      "[interface en1] shutdown",
+      "ip dns redirect ad.example.com 0.0.0.0",
+    ]);
     expect(drift.removed).toEqual(["syslog server 192.168.2.50:514"]);
   });
 
@@ -308,7 +349,62 @@ describe("Fleet Auditor ADK Workflow", () => {
     expect(finalSummary.summary).toContain("passed compliance and drift checks");
   });
 
-  it("routes non-compliant/drifted fleets to the LLM remediation planner", async () => {
+  it("routes non-compliant fleets to deterministic remediation when no Gemini API key is configured", async () => {
+    const savedKeys = {
+      GOOGLE_GENAI_API_KEY: process.env["GOOGLE_GENAI_API_KEY"],
+      GOOGLE_API_KEY: process.env["GOOGLE_API_KEY"],
+      GEMINI_API_KEY: process.env["GEMINI_API_KEY"],
+    };
+    delete process.env["GOOGLE_GENAI_API_KEY"];
+    delete process.env["GOOGLE_API_KEY"];
+    delete process.env["GEMINI_API_KEY"];
+
+    try {
+      const workflow = createFleetAuditWorkflow({
+        loadDevicesFn: () => TEST_DEVICES,
+        queryFn: createMockQueryFn({ drift: true }),
+        policy: {
+          goldenBaselines: {
+            "hq-router":
+              "hostname Island-HQ\nsyslog server 192.168.2.50:514\nsyslog level 5\nntp pool.ntp.org",
+          },
+        },
+      });
+
+      const runner = new InMemoryRunner({ agent: workflow });
+      const outputs: unknown[] = [];
+
+      for await (const event of runner.runEphemeral({
+        userId: "test-operator",
+        newMessage: { parts: [{ text: "Audit fleet without API key" }] },
+      })) {
+        if (event.output !== undefined) {
+          outputs.push(event.output);
+        }
+      }
+
+      const finalOutput = outputs.at(-1) as {
+        status: string;
+        mode: string;
+        remediation_steps: { check: string }[];
+      };
+      expect(finalOutput.status).toBe("needs_remediation");
+      expect(finalOutput.mode).toBe("deterministic");
+      expect(finalOutput.remediation_steps.map((s) => s.check)).toEqual(
+        expect.arrayContaining([
+          "syslog_forwarding",
+          "interfaces_up",
+          "golden_baseline_drift",
+        ]),
+      );
+    } finally {
+      for (const [k, v] of Object.entries(savedKeys)) {
+        if (v !== undefined) process.env[k] = v;
+      }
+    }
+  });
+
+  it("routes non-compliant/drifted fleets to the LLM remediation planner when model is provided", async () => {
     const mockLlm = new MockLlm(
       "Remediation Plan: configure syslog server 192.168.2.50 level 5 and inspect interface en1.",
     );
@@ -342,26 +438,30 @@ describe("Fleet Auditor ADK Workflow", () => {
 });
 
 describe("Firmware Upgrade ADK Workflow & Pre-flight Guardrails", () => {
-  it("captures snapshots and flags post-upgrade regressions deterministically", async () => {
+  it("captures snapshots with real VpnSummary shape and flags interface + VPN peer regressions", async () => {
     const pre = await captureFirmwareSnapshot(
       TEST_DEVICES[0]!,
-      createMockQueryFn({ drift: false }),
+      createMockQueryFn({ drift: false, dropVpnPeer: false }),
     );
+    expect(pre.vpn_peers).toHaveLength(1);
+
     const postWithRegression = await captureFirmwareSnapshot(
       TEST_DEVICES[0]!,
-      createMockQueryFn({ drift: true }),
+      createMockQueryFn({ drift: true, dropVpnPeer: true }),
     );
+    expect(postWithRegression.vpn_peers).toHaveLength(0);
 
     const diff = diffFirmwareSnapshots(pre, postWithRegression);
     expect(diff.passed).toBe(false);
     expect(diff.regressions).toEqual(
       expect.arrayContaining([
         expect.stringContaining("Interface 'en1' was up before upgrade"),
+        expect.stringContaining("VPN peer count decreased from 1 to 0"),
       ]),
     );
   });
 
-  it("blocks firmware update via beforeToolCallback unless preflight_snapshot is in session state", () => {
+  it("blocks firmware update via beforeToolCallback unless preflight_snapshot matches non-empty device_id", () => {
     const stateMap = new Map<string, unknown>();
     const fakeContext = {
       state: {
@@ -373,25 +473,32 @@ describe("Firmware Upgrade ADK Workflow & Pre-flight Guardrails", () => {
     const configureTool = tools.find((t) => t.name === "island_configure")!;
 
     // 1. Blocked when preflight_snapshot is missing
-    const blockedResult = enforcePreflightBeforeUpdateCallback({
-      tool: configureTool,
-      args: { device_id: "hq-router", action: "update" },
-      context: fakeContext,
-    });
-    expect(blockedResult).toEqual(
-      expect.objectContaining({
-        blocked: true,
+    expect(
+      enforcePreflightBeforeUpdateCallback({
+        tool: configureTool,
+        args: { device_id: "hq-router", action: "update" },
+        context: fakeContext,
       }),
-    );
+    ).toEqual(expect.objectContaining({ blocked: true }));
 
-    // 2. Allowed once preflight_snapshot is recorded for the target device
+    // 2. Blocked when device_id is empty even after a snapshot is saved
     stateMap.set("preflight_snapshot", { device_id: "hq-router" });
-    const allowedResult = enforcePreflightBeforeUpdateCallback({
-      tool: configureTool,
-      args: { device_id: "hq-router", action: "update" },
-      context: fakeContext,
-    });
-    expect(allowedResult).toBeUndefined();
+    expect(
+      enforcePreflightBeforeUpdateCallback({
+        tool: configureTool,
+        args: { device_id: "", action: "update" },
+        context: fakeContext,
+      }),
+    ).toEqual(expect.objectContaining({ blocked: true }));
+
+    // 3. Allowed once preflight_snapshot matches non-empty target device_id
+    expect(
+      enforcePreflightBeforeUpdateCallback({
+        tool: configureTool,
+        args: { device_id: "hq-router", action: "update" },
+        context: fakeContext,
+      }),
+    ).toBeUndefined();
   });
 
   it("runs preflight_snapshot before firmware_upgrade_planner in the ADK Workflow", async () => {

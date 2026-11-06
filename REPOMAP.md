@@ -32,6 +32,8 @@ island-router-mcp/
 │   ├── core/                 # ★ Shared action core (add capabilities here)
 │   │   ├── query.ts          # dispatchQuery + read handlers
 │   │   ├── configure.ts      # dispatchConfigure + write handlers
+│   │   ├── fleet.ts          # Deterministic compliance, context-aware drift & remediation
+│   │   ├── firmware.ts       # Pre/post-upgrade snapshots, regression diff & runbooks
 │   │   ├── actionCatalog.ts  # MCP list/describe + param pick
 │   │   ├── session.ts / validate.ts / syslog.ts / index.ts
 │   ├── server.ts             # Thin MCP adapter (4 meta-tools)

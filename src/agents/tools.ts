@@ -7,13 +7,15 @@
  * on all write/firmware actions.
  */
 
-import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   FunctionTool,
   LogLevel,
   SkillToolset,
+  isBaseLlm,
   loadAllSkillsInDir,
   setLogLevel,
+  type BaseLlm,
   type BaseTool,
 } from "@google/adk";
 import { z } from "zod";
@@ -42,6 +44,23 @@ export interface AgentToolDependencies {
     dev: DeviceConfig,
     params: ConfigureParams,
   ) => Promise<Record<string, unknown>>;
+}
+
+/**
+ * True when an injected `BaseLlm` instance is provided or a Gemini/Google GenAI
+ * API key is present in the environment. When false, workflows automatically
+ * route to deterministic zero-token remediation/runbook nodes instead of throwing.
+ */
+export function hasLlmCredentials(model?: string | BaseLlm): boolean {
+  if (model !== undefined && isBaseLlm(model)) {
+    return true;
+  }
+  const envKeys = [
+    process.env["GOOGLE_GENAI_API_KEY"],
+    process.env["GOOGLE_API_KEY"],
+    process.env["GEMINI_API_KEY"],
+  ];
+  return envKeys.some((val) => typeof val === "string" && val.trim().length > 0);
 }
 
 /**
@@ -79,7 +98,7 @@ export function createIslandAdkTools(deps: AgentToolDependencies = {}): BaseTool
       action: z
         .string()
         .optional()
-        .describe("Exact action name to inspect (e.g. 'ping', 'set_syslog')."),
+        .describe("Exact action name to inspect (e.g. 'ping', 'set_syslog', 'audit')."),
       query: z
         .string()
         .optional()
@@ -176,18 +195,25 @@ export function createIslandAdkTools(deps: AgentToolDependencies = {}): BaseTool
   return [listDevicesTool, actionsTool, queryTool, configureTool];
 }
 
+const DEFAULT_SKILLS_DIR = fileURLToPath(
+  new URL("../../.agent/skills", import.meta.url),
+);
+
 /**
  * Load `.agent/skills/` (reference `.md` skills such as `island-router-cli` and `island-axi`)
  * into an ADK `SkillToolset` so LlmAgents can progressively read CLI syntax on demand.
  */
 export async function createIslandSkillToolset(
-  skillsDir = path.join(process.cwd(), ".agent", "skills"),
+  skillsDir = DEFAULT_SKILLS_DIR,
 ): Promise<SkillToolset> {
   const safeDir = resolveLocalPath(skillsDir, "skills directory");
-  // Suppress @google/adk's warn logs for optional missing `references/` or `assets/` folders.
   setLogLevel(LogLevel.ERROR);
-  const skills = await loadAllSkillsInDir(safeDir);
-  return new SkillToolset(skills, {
-    allowInlineScripts: false,
-  });
+  try {
+    const skills = await loadAllSkillsInDir(safeDir);
+    return new SkillToolset(skills, {
+      allowInlineScripts: false,
+    });
+  } finally {
+    setLogLevel(LogLevel.WARN);
+  }
 }

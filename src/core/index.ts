@@ -33,7 +33,32 @@ export {
   queryDnsRedirects,
   queryCommand,
   queryPing,
+  queryAudit,
+  queryFirmwareSnapshot,
 } from "./query.js";
+export {
+  buildDeterministicRemediationPlan,
+  collectDeviceAuditSnapshot,
+  computeConfigDrift,
+  evaluateDeviceCompliance,
+  extractVpnPeers,
+  normalizeConfigLines,
+  type ConfigDriftResult,
+  type DeviceAuditResult,
+  type DeviceAuditSnapshot,
+  type DeviceComplianceCheck,
+  type FleetAuditReport,
+  type FleetCompliancePolicy,
+  type RemediationStep,
+} from "./fleet.js";
+export {
+  buildDeterministicUpgradeRunbook,
+  captureFirmwareSnapshot,
+  diffFirmwareSnapshots,
+  type DeterministicUpgradeRunbook,
+  type FirmwareDeviceSnapshot,
+  type FirmwareSnapshotDiff,
+} from "./firmware.js";
 export {
   ACTION_CATALOG,
   ActionCatalogError,

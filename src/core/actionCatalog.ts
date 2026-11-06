@@ -141,6 +141,24 @@ const QUERY_SPECS: ActionSpec[] = [
     ],
     { target: EXAMPLE_IPV4 },
   ),
+  makeSpec(
+    "audit",
+    "query",
+    "Deterministic compliance audit, optional golden-baseline drift diff, and remediation steps",
+    [
+      {
+        name: "baseline",
+        type: "string",
+        required: false,
+        description: "Optional golden baseline running-config text to diff against",
+      },
+    ],
+  ),
+  makeSpec(
+    "firmware_snapshot",
+    "query",
+    "Capture full pre/post-upgrade router snapshot with deterministic upgrade runbook and rollback plan",
+  ),
 ];
 
 const CONFIGURE_SPECS: ActionSpec[] = [

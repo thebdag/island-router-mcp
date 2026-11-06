@@ -21,6 +21,8 @@ COMMANDS
   dns-redirects    DNS redirect / sinkhole rules
   ping             ICMP ping from the router
   show             Run an allowlisted show command
+  audit            Compliance audit + optional golden baseline drift check
+  firmware-snapshot Capture pre/post-upgrade snapshot + upgrade runbook
   configure        Write operations (requires --confirm)
   setup            Install agent session hooks
 
@@ -214,6 +216,35 @@ FLAGS
 EXAMPLES
   island-axi show version
   island-axi show ip neighbors
+`,
+
+  audit: `island-axi audit [--device <id>] [--baseline-file <path>]
+
+Run a deterministic compliance audit (syslog, NTP, interface health) and
+optionally diff running-config against a golden baseline file.
+
+FLAGS
+  --device <id>
+  --baseline-file <path>   Golden baseline config file inside cwd or home
+
+EXAMPLES
+  island-axi audit
+  island-axi audit --device island-edge-1 --baseline-file baselines/edge1.cfg
+`,
+
+  "firmware-snapshot": `island-axi firmware-snapshot [--device <id>] [--full]
+
+Capture a complete pre/post-upgrade router snapshot (version, interfaces,
+routes, neighbors, VPNs, DHCP, NTP, running-config) and generate an upgrade
+runbook and rollback plan.
+
+FLAGS
+  --device <id>
+  --full             Include full running-config without truncation
+
+EXAMPLES
+  island-axi firmware-snapshot
+  island-axi firmware-snapshot --device island-edge-1 --full
 `,
 
   configure: `island-axi configure <action> [flags] --confirm
