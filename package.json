@@ -4,7 +4,14 @@
   "type": "module",
   "private": true,
   "description": "MCP server and AXI CLI for Island Router — token-efficient agent tooling over SSH",
-  "keywords": ["axi", "island-router", "mcp", "cli", "agent", "toon"],
+  "keywords": [
+    "axi",
+    "island-router",
+    "mcp",
+    "cli",
+    "agent",
+    "toon"
+  ],
   "bin": {
     "island-mcp-server": "./build/server.js",
     "island-axi": "./build/cli/island-axi.js"
@@ -20,6 +27,7 @@
     "watch": "tsc --watch",
     "start": "node build/server.js",
     "island-axi": "node build/cli/island-axi.js",
+    "agent": "node build/agents/cli.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -30,12 +38,24 @@
     "ssh2": "^1.15.0",
     "zod": "^4.6.7"
   },
+  "peerDependencies": {
+    "@google/adk": "^2.4.0"
+  },
+  "peerDependenciesMeta": {
+    "@google/adk": {
+      "optional": true
+    }
+  },
   "overrides": {
     "ajv": "^8.20.0",
+    "glob": "^14.0.4",
     "jose": "^6.2.5",
-    "raw-body": "^4.0.0"
+    "minimatch": "^11.0.5",
+    "raw-body": "^4.0.0",
+    "uuid": "^14.0.3"
   },
   "devDependencies": {
+    "@google/adk": "^2.4.0",
     "@types/dotenv": "^6.1.1",
     "@types/node": "^22.0.0",
     "@types/ssh2": "^1.15.0",

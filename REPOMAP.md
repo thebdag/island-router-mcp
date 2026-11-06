@@ -32,6 +32,8 @@ island-router-mcp/
 │   ├── core/                 # ★ Shared action core (add capabilities here)
 │   │   ├── query.ts          # dispatchQuery + read handlers
 │   │   ├── configure.ts      # dispatchConfigure + write handlers
+│   │   ├── fleet.ts          # Deterministic compliance, context-aware drift & remediation
+│   │   ├── firmware.ts       # Pre/post-upgrade snapshots, regression diff & runbooks
 │   │   ├── actionCatalog.ts  # MCP list/describe + param pick
 │   │   ├── session.ts / validate.ts / syslog.ts / index.ts
 │   ├── server.ts             # Thin MCP adapter (4 meta-tools)
@@ -42,6 +44,12 @@ island-router-mcp/
 │   │   ├── island-axi.ts
 │   │   ├── home.ts, help.ts, args.ts, format.ts, session.ts
 │   │   └── commands/         # AXI wrappers around core
+│   ├── agents/               # Google ADK (@google/adk) autonomous workflows
+│   │   ├── tools.ts          # Native ADK FunctionTools + SkillToolset over core
+│   │   ├── fleetAuditorAgent.ts     # Fleet drift & compliance workflow (0-token healthy path)
+│   │   ├── firmwareUpgradeAgent.ts  # Pre-flight snapshot + guarded upgrade workflow
+│   │   ├── cli.ts            # ADK workflow CLI runner (`npm run agent`)
+│   │   └── index.ts
 │   └── parsers/              # Pure CLI → typed data
 │
 ├── test/                     # vitest (no live router required)

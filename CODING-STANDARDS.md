@@ -105,7 +105,7 @@ When adding a new operation:
 
 ### Current Action Inventory
 
-**Query actions** (15 total):
+**Query actions** (17 total):
 
 | Action | Core handler (`src/core/`) | Description |
 |---|---|---|
@@ -124,6 +124,8 @@ When adding a new operation:
 | `dns_redirects` | `queryDnsRedirects()` | DNS redirect rules (hostname → server) |
 | `command` | `queryCommand()` | Any allowlisted show command |
 | `ping` | `queryPing()` | ICMP ping from router |
+| `audit` | `queryAudit()` | Deterministic compliance audit, context-aware baseline drift, and remediation plan |
+| `firmware_snapshot` | `queryFirmwareSnapshot()` | Pre/post-upgrade router snapshot + deterministic upgrade runbook |
 
 **Configure actions** (13 total):
 
@@ -154,6 +156,7 @@ When adding a new operation:
 | `logs` / `config` / `config-diff` | Truncation + `--full` |
 | `vpns` / `dhcp` / `ntp` / `dns-redirects` | Structured lists |
 | `ping` / `show` | Diagnostics / allowlisted show |
+| `audit` / `firmware-snapshot` | Deterministic compliance/drift audit & firmware preflight runbook |
 | `configure` | Writes; requires `--confirm` |
 | `setup hooks` | Ambient SessionStart integration |
 

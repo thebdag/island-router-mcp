@@ -9,6 +9,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 ## [Unreleased]
 
 ### Added
+- **Core Fleet Compliance, Drift & Firmware Snapshot Engines (`src/core/fleet.ts`, `src/core/firmware.ts`)**:
+  - Exposed on **MCP** (`island_query` with `action: "audit"` and `action: "firmware_snapshot"`) and **`island-axi`** (`island-axi audit [--baseline-file <path>]`, `island-axi firmware-snapshot [--full]`) so every harness (Claude Code, Cursor, Antigravity, Codex, OpenCode, Claude Desktop) gets zero-token compliance, context-aware config drift (`normalizeConfigLines`, `computeConfigDrift`), and firmware pre-flight/post-flight verification (`captureFirmwareSnapshot`, `diffFirmwareSnapshots`) with zero API keys
+  - Single-session SSH batching (`withSession`) for audit and firmware snapshots
+- **Google ADK Autonomous Workflows (`@google/adk`) (`src/agents/`)**:
+  - Native ADK `FunctionTool` wrappers (`createIslandAdkTools`) over `src/core/` with `requireConfirmation: true` (Human-in-the-Loop interrupt gate) on `island_configure`
+  - Progressive `SkillToolset` loader (`createIslandSkillToolset`) exposing `.agent/skills/` reference docs to ADK agents
+  - **Fleet Auditor Workflow (`fleetAuditorAgent.ts`)** & **Firmware Upgrade Workflow (`firmwareUpgradeAgent.ts`)** with keyless deterministic fallback nodes (`deterministic_remediation_planner`, `deterministic_firmware_planner`) when no Gemini API key is configured, plus `enforcePreflightBeforeUpdateCallback` runtime guardrail
+  - Strict CLI runner (`npm run agent` / `src/agents/cli.ts`) and offline trajectory unit tests (`test/agents.test.ts`)
+  - `@google/adk` configured as an optional `peerDependency` with transitive vulnerability `overrides` (`0` `npm audit` advisories)
 - **Firmware update actions** (official CLI 2.3.2):
   - `update` — `update [<url>]` checks for newer firmware and installs if found; optional URL/filename
   - `clear_update` — `clear update` stops a stuck/incomplete update
