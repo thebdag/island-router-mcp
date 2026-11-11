@@ -9,6 +9,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 ## [Unreleased]
 
 ### Added
+- **Firmware 4.1 compatibility and architectural documentation**:
+  - Validated and documented compatibility across firmware versions 2.3.2 through 4.1+.
+  - Documented firmware 4.1 features across skills and README:
+    - **OceanView™ Fleet Dashboard**: Centralized real-time multi-site monitoring and Island Hopping.
+    - **Cross Connect & Multicasting**: Patent-pending targeted inter-VLAN/LAN communication without flat-network security compromises.
+    - **PPPoE Support**: WAN interface PPPoE configuration.
+  - Enhanced `skill-firmware-differ` with complete `v2.3.2 → v4.1` upgrade planning, compatibility diffing, and rollback steps.
+  - Aligned `skill-network-fleet` with OceanView™ multi-site monitoring capabilities.
+  - Added unit test suite `test/system.test.ts` covering firmware 4.1 and 2.3.2 `show version` parsing.
 - **VLAN management actions** (official CLI 2.3.2):
   - `vlans` — query action parsing configured VLAN interfaces from `show running-config` and merging operational status from `show interface summary`
   - `create_vlan` — configure action to provision VLAN sub-interfaces (`interface vlan<id>`, `parent <iface>`, `ip autoconfig lan`, `ip address <cidr>`, `ip dhcp-server`, optional scope/lease/description, `end`, `write memory`)
@@ -39,6 +48,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - Enhanced subscriber classifier in `src/parsers/subscribers.ts` to evaluate infrastructure/compute keywords against device identity (hostname, description, vendor) rather than visited destination domains.
 - Added dual-stack IPv4/IPv6 support and parent status inheritance to VLAN parser in `src/parsers/vlans.ts`.
 - Catalog examples use RFC 5737 documentation IPv4; query/configure specs share a helper so SonarCloud no longer flags copy-paste duplication in `actionCatalog.ts`
+- Fixed firmware version parser in `src/parsers/system.ts` to strip redundant prefix tokens so version strings like `4.1` and `2.3.2` parse cleanly without trailing `version` prefixes.
 
 ### Removed
 - **Non-Island skills**: Purged generic and cloud skills (`skill-finops-gcp`, `skill-mcp-orchestrator`, `skill-mcp-builder`, `skill-meta-pipeline`, `skill-knowledge-harvester`, `skill-homelab-pi`) and sanitized all remaining skills and documentation to be strictly Island Router-specific.

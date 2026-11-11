@@ -6,7 +6,7 @@ Primary skill tree for this repo. Codex / OpenCode also resolve `.agents/skills/
 | --- | --- | --- |
 | [`island-axi`](./island-axi/SKILL.md) | AXI CLI | Operating or extending `island-axi` |
 | [`axi`](./axi/SKILL.md) | Standards | Designing agent-ergonomic CLIs ([axi.md](https://axi.md/)) |
-| [`island-router-cli`](./island-router-cli/SKILL.md) | Island CLI | Exact command syntax (fw 2.3.2) |
+| [`island-router-cli`](./island-router-cli/SKILL.md) | Island CLI | Exact command syntax (fw 2.3.2 - 4.1) |
 | [`skill-network-fleet`](./skill-network-fleet/SKILL.md) | Networking | Multi-device Island Router fleet / drift |
 | [`skill-firmware-differ`](./skill-firmware-differ/SKILL.md) | Networking | Island Router firmware upgrades |
 | [`skill-network-traffic-etl`](./skill-network-traffic-etl/SKILL.md) | Analytics | Island Router traffic ETL |

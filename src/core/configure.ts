@@ -181,7 +181,7 @@ function firmwareUpdateCommand(url?: string): string {
 
 /**
  * Check for / install firmware (or package) updates.
- * Per Island CLI 2.3.2: `update [<url>]` looks for newer firmware and,
+ * Per Island CLI (fw 2.3.2 - 4.1+): `update [<url>]` looks for newer firmware and,
  * if found, downloads and installs it. No `write memory` (not a config change).
  * @see https://docs.islandrouter.com/island-router-cli-2.3.2/commands/update.md
  */

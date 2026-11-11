@@ -4,7 +4,7 @@
 
 An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that exposes Island Router CLI operations as structured tools for AI assistants like Google Antigravity, Claude, and other MCP-compatible clients.
 
-CLI behavior is aligned with the **official Island Router CLI Reference Guide (firmware 2.3.2)**.
+CLI behavior is aligned with the **official Island Router CLI Reference Guide (firmware 2.3.2)** and supports **firmware 2.3.2 through 4.1+**.
 
 **For coding agents:** start at [`AGENTS.md`](AGENTS.md), then [`REPOMAP.md`](REPOMAP.md) and [`CODING-STANDARDS.md`](CODING-STANDARDS.md). Skills live under `.agent/skills/` (mirrored at `.agents/skills/`).
 
@@ -98,10 +98,10 @@ Located in `.agent/skills/` (and installable `skills/island-axi/`), these are AI
 | --- | --- | --- |
 | `island-axi` | Networking / AXI | Agent-first CLI usage — TOON output, commands, hooks, configure safety |
 | `axi` | Standards | AXI design principles (from [axi.md](https://axi.md/)) for reviewing agent CLIs |
-| `island-router-cli` | Networking | CLI reference for Island Router fw 2.3.2 — aligned with official 260-page guide. 2-context model (Global + Interface), history ETL, syslog (numeric 0-7), VPN, SNMP, DNS-over-HTTPS |
+| `island-router-cli` | Networking | CLI reference for Island Router fw 2.3.2 - 4.1 — aligned with official guide. 2-context model (Global + Interface), history ETL, syslog (numeric 0-7), VPN, SNMP, DNS-over-HTTPS, OceanView/Cross Connect highlights |
 | `skill-observability-pipeline` | DevOps | Island Router syslog → Promtail → Loki → Grafana pipeline setup |
-| `skill-network-fleet` | Networking | Multi-device Island Router config drift detection, compliance audits, automated backups |
-| `skill-firmware-differ` | Networking | Island Router firmware upgrade runbooks with pre/post snapshots, compatibility analysis, rollback plans |
+| `skill-network-fleet` | Networking | Multi-device Island Router config drift detection, compliance audits, automated backups (complements OceanView™) |
+| `skill-firmware-differ` | Networking | Island Router firmware upgrade runbooks (e.g. v2.3.2 → v4.1) with pre/post snapshots, compatibility analysis, rollback plans |
 | `skill-network-traffic-etl` | Analytics | Per-device traffic ETL from Island Router `show history` — bandwidth, sites visited, categories → Grafana, InfluxDB, DuckDB, CSV |
 
 ---
@@ -281,6 +281,16 @@ island-router-mcp/                # Workspace root
 - This server uses ssh2's interactive `shell()` mode (not `exec()`) because the CLI is stateful across commands.
 - Config commands are issued directly without `configure terminal` → `end` wrappers, per the official CLI Reference Guide.
 - **12 of 15 query actions return structured JSON**, not raw CLI text. Only `config`, `config_diff`, and `command` return raw text (intentionally — they are unstructured by nature).
+
+## Firmware Compatibility: 2.3.2 through 4.1+
+
+This toolset is verified across Island Router firmware versions:
+- **Baseline (fw 2.3.2)**: Standard 260-page CLI reference guide implementation.
+- **Firmware 4.1 Release Highlights**:
+  - **OceanView™ Fleet Dashboard**: Centralized real-time multi-site monitoring and Island Hop navigation for fleets of Island routers. Complements `devices.json` and `skill-network-fleet`.
+  - **Cross Connect & Multicasting**: Secure inter-VLAN/LAN communication and multicasting between named devices/groups without flat-network compromises.
+  - **PPPoE Support**: Native PPPoE compatibility on WAN interfaces for fiber/DSL ISP handoffs.
+  - **Core CLI Compatibility**: Global prompt execution, interface context, numeric syslog (0-7), and firmware update actions (`update [<url>]`, `clear update`) remain fully backwards-compatible across 2.3.2 and 4.1.
 
 ## Structured Parsers
 

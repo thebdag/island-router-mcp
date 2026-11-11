@@ -98,25 +98,29 @@ Compare the current firmware's CLI commands against the target firmware's releas
 ### Release Notes Analysis Template
 
 ```markdown
-## Firmware Upgrade Analysis: v2.3.2 → v<target>
+## Firmware Upgrade Analysis: v2.3.2 → v<target> (e.g. v4.1)
 
 ### Breaking Changes
 - [ ] List any deprecated commands found in current config
 - [ ] List any renamed parameters
 - [ ] List any removed features currently in use
 
-### New Features
-- [ ] Features available in target that could benefit config
+### New Features (e.g. Firmware 4.1)
+- [ ] **OceanView™ Fleet Dashboard**: Centralized multi-site dashboard and Island Hop navigation
+- [ ] **Cross Connect**: Targeted inter-VLAN/LAN device communication and native multicasting
+- [ ] **PPPoE Support**: WAN interface PPPoE configuration for fiber/DSL ISPs
+- [ ] Under-the-hood fixes: PIN handling with leading zeros, IPv6 initial connection, VPN grouping
 
 ### Config Migration Required
 | Current Command | New Command | Status |
 |---|---|---|
 | `old-command param` | `new-command param` | ⚠️ Must update |
+*(Note: v2.3.2 to v4.1 introduces no breaking CLI command deprecations; existing global and interface context configurations remain fully backwards-compatible).*
 
 ### Risk Assessment
-- **Overall Risk:** Low / Medium / High
+- **Overall Risk:** Low / Medium
 - **Expected Downtime:** < 5 min (reboot cycle)
-- **Rollback Complexity:** Low (restore startup-config + reload)
+- **Rollback Complexity:** Low (`rollback` command restores startup checkpoint; `clear update` cleans up interrupted downloads)
 ```
 
 ---
@@ -221,7 +225,7 @@ After upgrade, capture the same data as pre-flight and compare:
 
 | Check | Pre-Upgrade | Post-Upgrade | Match? |
 |---|---|---|---|
-| Firmware version | 2.3.2 | 2.4.0 | ✅ Changed (expected) |
+| Firmware version | 2.3.2 | 4.1 | ✅ Changed (expected) |
 | Interface count | 6 (4 up) | 6 (4 up) | ✅ Match |
 | Route count | 12 | 12 | ✅ Match |
 | VPN peers | 3 active | 3 active | ✅ Match |

@@ -4,7 +4,14 @@
   "type": "module",
   "private": true,
   "description": "MCP server and AXI CLI for Island Router — token-efficient agent tooling over SSH",
-  "keywords": ["axi", "island-router", "mcp", "cli", "agent", "toon"],
+  "keywords": [
+    "axi",
+    "island-router",
+    "mcp",
+    "cli",
+    "agent",
+    "toon"
+  ],
   "bin": {
     "island-mcp-server": "./build/server.js",
     "island-axi": "./build/cli/island-axi.js"
@@ -25,8 +32,12 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
+    "@opentelemetry/exporter-logs-otlp-http": "^0.301.1",
+    "@opentelemetry/resources": "^3.1.1",
+    "@opentelemetry/sdk-logs": "^3.1.1",
     "axi-sdk-js": "^0.1.13",
     "dotenv": "^17.4.0",
+    "posthog-node": "^5.69.0",
     "ssh2": "^1.15.0",
     "zod": "^3.25.76"
   },

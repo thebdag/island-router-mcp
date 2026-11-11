@@ -29,7 +29,7 @@ If output shows a follow-up starting with `island-axi`, run the same binary form
 ## Requirements
 
 - `devices.json` (from `devices.example.json`) **or** `ROUTER_IP` + `ROUTER_PASS` / `ROUTER_KEY`
-- Network SSH access to the Island Router (firmware 2.3.2 CLI model)
+- Network SSH access to the Island Router (firmware 2.3.2 - 4.1 CLI model)
 
 ## When to use
 
@@ -62,6 +62,6 @@ commands[18]:
 - Syslog levels are numeric **0–7** (not string names).
 - **VLANs & Segmentation:** Island Router isolates distinct LAN/VLAN subnets automatically. Use `island-axi vlans` to inspect VLANs, and `island-axi configure create-vlan` / `delete-vlan` with `--confirm`.
 - **IoT & Subscriber Discovery:** `island-axi subscribers [--category iot|media|infrastructure|compute|unknown]` correlates ARP, DHCP leases, reservations, and Island SSDP/mDNS history fingerprinting.
-- **Firmware updates (CLI 2.3.2):** there is no read-only “check for updates” show command. Use `island-axi configure update --confirm` (`update [<url>]`) — Island looks for newer firmware and installs if found. Baseline with `show version` / `show version history`. Stuck update: `configure clear-update --confirm`.
+- **Firmware updates (CLI 2.3.2 - 4.1):** there is no read-only “check for updates” show command. Use `island-axi configure update --confirm` (`update [<url>]`) — Island looks for newer firmware and installs if found. Baseline with `show version` / `show version history`. Stuck update: `configure clear-update --confirm`.
 - Install ambient context: `island-axi setup hooks`
 - Deep CLI reference: see skill `island-router-cli` in this repo (and https://docs.islandrouter.com/island-router-cli-2.3.2).

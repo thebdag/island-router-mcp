@@ -21,7 +21,7 @@ export interface VersionInfo {
  * Parse `show version` output.
  *
  * Expected format varies, but typically includes lines like:
- *   Island Router firmware version 2.3.2
+ *   Island Router firmware version 4.1 (or 2.3.2)
  *   Model: IX2400
  *   Serial number: ISL12345678
  *   Uptime: 14 days, 3 hours, 22 minutes
@@ -45,7 +45,8 @@ export function parseVersion(raw: string): VersionInfo {
     // Firmware version
     const fwMatch = /(?:firmware|software|version)[:\s]+(.+)/i.exec(line);
     if (fwMatch && !info.firmware) {
-      info.firmware = fwMatch[1]?.trim() ?? "";
+      const captured = fwMatch[1]?.trim() ?? "";
+      info.firmware = captured.replace(/^(?:firmware|software|version)[:\s]+/i, "").trim();
     }
 
     // Model

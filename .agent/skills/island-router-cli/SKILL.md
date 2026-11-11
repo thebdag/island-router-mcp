@@ -1,10 +1,10 @@
 ---
 name: island-router-cli
 description: |
-  Skill for managing an Island Router via its SSH CLI (firmware 2.3.2).
+  Skill for managing an Island Router via its SSH CLI (firmware 2.3.2 - 4.1).
   Covers all CLI commands, session management, DHCP reservations, DNS/syslog configuration,
-  device monitoring, VPN, SNMP, tcpdump, and automation patterns.
-  Aligned with official Island Router CLI Reference Guide (260 pages, fw 2.3.2).
+  device monitoring, VPN, SNMP, tcpdump, VLANs, and automation patterns.
+  Aligned with official Island Router CLI Reference Guide (260 pages, fw 2.3.2) and firmware 4.1 updates.
 ---
 
 # Island Router CLI Skill
@@ -236,6 +236,17 @@ When pairing Island Router with UniFi switches and access points:
    show ip neighbors
    ```
    Or use `island-axi subscribers --category iot`.
+
+#### Firmware 4.1: Cross Connect & Multicasting Integration
+
+In firmware 4.1, PerfTech introduced **Cross Connect** to resolve the common IoT segmentation challenge:
+- **The Segmentation Trade-off**: Isolating IoT hardware, media players, or cameras on dedicated VLANs (e.g., VLAN 20) secures the network, but typically breaks local mDNS discovery, casting (AirPlay/Chromecast), Sonos multi-room audio, and NVR access.
+- **Cross Connect Solution**: Enables secure, targeted communication and native multicasting between named devices or device groups across LAN/VLAN boundaries without exposing the entire subnet or requiring complex firewall and multicast gateway (PIM/Bonjour) rules.
+- **Other Firmware 4.1 Features**:
+  - **OceanView™ Fleet Dashboard**: Centralized real-time overview for multi-router deployments and seamless Island Hopping.
+  - **PPPoE on WAN**: Native Point-to-Point Protocol over Ethernet support for fiber/DSL ISP handoffs.
+  - **App & Security Refinements**: Device list search, VPN group management, leading zero PIN support, and enhanced initial setup updates.
+
 
 ---
 

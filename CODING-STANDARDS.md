@@ -3,7 +3,7 @@
 Development conventions for the Island Router MCP Server + `island-axi` CLI.
 
 > **Agent entry:** [`AGENTS.md`](AGENTS.md) · **Map:** [`REPOMAP.md`](REPOMAP.md)  
-> **Canonical CLI reference:** `.agent/skills/island-router-cli/SKILL.md` (fw 2.3.2)
+> **Canonical CLI reference:** `.agent/skills/island-router-cli/SKILL.md` (fw 2.3.2 - 4.1)
 
 ---
 

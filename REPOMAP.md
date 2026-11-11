@@ -4,7 +4,7 @@
 
 ## Project
 
-**island-router-mcp** — Unofficial MCP server + AXI CLI for Island Router (fw 2.3.2). Not affiliated with Island Technology Inc.
+**island-router-mcp** — Unofficial MCP server + AXI CLI for Island Router (fw 2.3.2 - 4.1+). Not affiliated with Island Technology Inc.
 
 | | |
 | --- | --- |
@@ -107,7 +107,7 @@ Full action tables: `CODING-STANDARDS.md`.
 | --- | --- |
 | `island-axi` | Using/extending the AXI CLI |
 | `axi` | Designing agent-ergonomic CLI output |
-| `island-router-cli` | Exact Island CLI syntax (fw 2.3.2) |
+| `island-router-cli` | Exact Island CLI syntax (fw 2.3.2 - 4.1) |
 | `skill-network-fleet` | Multi-device Island Router drift / backups |
 | `skill-firmware-differ` | Island Router firmware upgrade runbooks |
 | `skill-network-traffic-etl` | Island Router traffic ETL pipelines |

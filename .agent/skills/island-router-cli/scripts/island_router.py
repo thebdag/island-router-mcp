@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-island_router.py — Reusable Island Router 2.3.2 CLI client via paramiko.
+island_router.py — Reusable Island Router CLI client (fw 2.3.2 - 4.1+) via paramiko.
 
 Usage:
     export ROUTER_PASS='YOUR_ROUTER_PASSWORD'

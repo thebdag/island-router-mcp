@@ -14,6 +14,8 @@ import { z } from "zod";
 import fs from "node:fs";
 import "dotenv/config";
 
+import { posthog } from "./posthog.js";
+import { logMcpLifecycle, shutdownPosthogLogs } from "./posthogLogs.js";
 import type { DeviceConfig } from "./islandSsh.js";
 import { getDeviceOrThrow as lookupDevice, loadDevices, resolveInventoryPath } from "./devices.js";
 import {
@@ -71,15 +73,20 @@ server.tool(
   "island_list_devices",
   "List all configured Island Router devices. No SSH needed.",
   {},
-  () =>
-    text(
+  () => {
+    posthog?.capture({
+      event: "island_devices_listed",
+      properties: { device_count: devices.length },
+    });
+    return text(
       devices.map(({ id, host, port, description }) => ({
         id,
         host,
         port,
         description: description ?? null,
       })),
-    ),
+    );
+  },
 );
 
 const QueryActions = z.enum(QUERY_ACTIONS);
@@ -101,12 +108,30 @@ server.tool(
       .describe("If set, return the full schema and example for this action"),
   },
   ({ query, kind, action }) => {
+    const properties = {
+      view: action ? "detail" : "catalog",
+      has_filter: Boolean(query || kind),
+    };
     try {
       if (action) {
-        return text(formatDescribe(describeAction(action)));
+        const response = text(formatDescribe(describeAction(action)));
+        posthog?.capture({
+          event: "island_actions_viewed",
+          properties: { ...properties, outcome: "success" },
+        });
+        return response;
       }
-      return text(listActions({ query, kind }));
+      const response = text(listActions({ query, kind }));
+      posthog?.capture({
+        event: "island_actions_viewed",
+        properties: { ...properties, outcome: "success" },
+      });
+      return response;
     } catch (err) {
+      posthog?.capture({
+        event: "island_actions_viewed",
+        properties: { ...properties, outcome: "error" },
+      });
       return asErrorPayload(action ?? "", err);
     }
   },
@@ -126,6 +151,10 @@ server.tool(
       const picked = pickActionParams(spec, params);
       const dev = getDeviceOrThrow(device_id);
       const result = await dispatchQuery(dev, picked as unknown as QueryParams);
+      posthog?.capture({
+        event: "island_query_completed",
+        properties: { action, outcome: "success" },
+      });
 
       if (action === "config" && result && typeof result === "object" && "config" in result) {
         return {
@@ -134,6 +163,10 @@ server.tool(
       }
       return text(result);
     } catch (err) {
+      posthog?.capture({
+        event: "island_query_completed",
+        properties: { action, outcome: "error" },
+      });
       return asErrorPayload(action, err);
     }
   },
@@ -161,15 +194,40 @@ server.tool(
       const spec = describeAction(action);
       const picked = pickActionParams(spec, params);
       const dev = getDeviceOrThrow(device_id);
-      return text(await dispatchConfigure(dev, picked as unknown as ConfigureParams));
+      const result = await dispatchConfigure(dev, picked as unknown as ConfigureParams);
+      posthog?.capture({
+        event: "island_configuration_completed",
+        properties: { action, outcome: "success" },
+      });
+      return text(result);
     } catch (err) {
+      posthog?.capture({
+        event: "island_configuration_completed",
+        properties: { action, outcome: "error" },
+      });
       return asErrorPayload(action, err);
     }
   },
 );
 
+let shutdownStarted = false;
+
+function handleShutdown(): void {
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  void Promise.race([
+    Promise.all([shutdownPosthogLogs(), posthog?.shutdown(3000).catch(() => {})]),
+    new Promise<void>((resolve) => setTimeout(resolve, 3000)),
+  ]).finally(() => process.exit(0));
+}
+
+process.once("SIGINT", handleShutdown);
+process.once("SIGTERM", handleShutdown);
+
 process.stderr.write(
   `[island-mcp] Starting v0.5.0 (core + thin MCP adapter) with ${devices.length} device(s)\n`,
 );
+logMcpLifecycle("mcp_server_starting");
 const transport = new StdioServerTransport();
 await server.connect(transport);
+logMcpLifecycle("mcp_server_connected");

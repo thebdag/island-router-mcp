@@ -12,6 +12,8 @@ date_added: "2026-04-01"
 
 Manage multiple Island Routers as a coordinated fleet — config backups, drift detection, compliance audits, and bulk operations.
 
+> **Note on Firmware 4.1 (OceanView™):** Firmware 4.1 introduces PerfTech's **OceanView™** centralized monitoring dashboard for high-level multi-site visibility. This agent skill complements OceanView by providing headless, SSH/CLI-driven programmatic audits, automated Git backups, baseline diffing, and direct configuration remediation.
+
 ## When to Use
 
 - Managing multiple Island Routers across sites
